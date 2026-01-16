@@ -1,10 +1,61 @@
 <script setup>
-import FloatingConfigurator from '@/components/FloatingConfigurator.vue';
+import { useToast } from 'primevue/usetoast';
 import { ref } from 'vue';
+import { useRouter } from 'vue-router';
+
+import api from '@/api/axios';
+import { useAuthStore } from '@/store/auth';
+
+// PrimeVue Components
+import FloatingConfigurator from '@/components/FloatingConfigurator.vue';
+import Button from 'primevue/button';
+import Checkbox from 'primevue/checkbox';
+import InputText from 'primevue/inputtext';
+import Password from 'primevue/password';
+
+const router = useRouter();
+const auth = useAuthStore();
+const toast = useToast();
 
 const email = ref('');
 const password = ref('');
 const checked = ref(false);
+const loading = ref(false);
+
+const onLogin = async () => {
+    try {
+        loading.value = true;
+
+        const { data } = await api.post('/auth/login', {
+            correo: email.value,
+            password: password.value
+        });
+
+        auth.login(data.access_token, data.user);
+
+        toast.add({
+            severity: 'success',
+            summary: 'Bienvenido',
+            detail: `Sesión iniciada como ${data.user.rol}`,
+            life: 3000
+        });
+
+        if (data.user.rol === 'admin') {
+            router.push('/admin/dashboard');
+        } else {
+            router.push('/alumno/dashboard');
+        }
+    } catch (error) {
+        toast.add({
+            severity: 'error',
+            summary: 'Error de autenticación',
+            detail: 'Correo o contraseña incorrectos',
+            life: 4000
+        });
+    } finally {
+        loading.value = false;
+    }
+};
 </script>
 
 <template>
@@ -40,6 +91,10 @@ const checked = ref(false);
                         <InputText id="email1" type="text" placeholder="Email address" class="w-full md:w-[30rem] mb-8" v-model="email" />
 
                         <label for="password1" class="block text-surface-900 dark:text-surface-0 font-medium text-xl mb-2">Password</label>
+                        <!-- <Message severity="warn">
+                                Debes completar este campo para iniciar sesión.
+                        </Message> -->
+
                         <Password id="password1" v-model="password" placeholder="Password" :toggleMask="true" class="mb-4" fluid :feedback="false"></Password>
 
                         <div class="flex items-center justify-between mt-2 mb-8 gap-8">
@@ -49,7 +104,7 @@ const checked = ref(false);
                             </div>
                             <span class="font-medium no-underline ml-2 text-right cursor-pointer text-primary">Forgot password?</span>
                         </div>
-                        <Button label="Sign In" class="w-full" as="router-link" to="/"></Button>
+                        <Button label="Sign In" class="w-full" :loading="loading" @click="onLogin" />
                     </div>
                 </div>
             </div>

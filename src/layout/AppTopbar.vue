@@ -1,17 +1,58 @@
 <script setup>
 import { useLayout } from '@/layout/composables/layout';
+import { ref } from 'vue';
+import { useRouter } from 'vue-router';
 import AppConfigurator from './AppConfigurator.vue';
 
+// PrimeVue
+import Menu from 'primevue/menu';
+
+const router = useRouter();
 const { toggleMenu, toggleDarkMode, isDarkTheme } = useLayout();
+
+// =======================
+// PERFIL MENU
+// =======================
+const profileMenu = ref(null);
+
+const toggleProfileMenu = (event) => {
+    profileMenu.value.toggle(event);
+};
+
+const logout = () => {
+    // Ajusta esto a tu auth real (Pinia / API)
+    localStorage.clear();
+    router.push('/login');
+};
+
+const profileItems = [
+    {
+        label: 'Ver perfil',
+        icon: 'pi pi-user',
+        command: () => router.push('/perfil')
+    },
+    {
+        separator: true
+    },
+    {
+        label: 'Cerrar sesión',
+        icon: 'pi pi-sign-out',
+        command: logout
+    }
+];
 </script>
 
 <template>
     <div class="layout-topbar">
+        <!-- LOGO + MENU -->
         <div class="layout-topbar-logo-container">
             <button class="layout-menu-button layout-topbar-action" @click="toggleMenu">
                 <i class="pi pi-bars"></i>
             </button>
+
             <router-link to="/" class="layout-topbar-logo">
+                <!-- SVG SIN CAMBIOS -->
+                <!-- ⬇️ se deja exactamente igual -->
                 <svg viewBox="0 0 54 40" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <path
                         fill-rule="evenodd"
@@ -29,19 +70,28 @@ const { toggleMenu, toggleDarkMode, isDarkTheme } = useLayout();
                         />
                     </g>
                 </svg>
-
-                <span>SAKAI</span>
+                <span>SISA</span>
             </router-link>
         </div>
 
+        <!-- ACTIONS -->
         <div class="layout-topbar-actions">
+            <!-- CONFIG / DARK MODE -->
             <div class="layout-config-menu">
                 <button type="button" class="layout-topbar-action" @click="toggleDarkMode">
                     <i :class="['pi', { 'pi-moon': isDarkTheme, 'pi-sun': !isDarkTheme }]"></i>
                 </button>
+
                 <div class="relative">
                     <button
-                        v-styleclass="{ selector: '@next', enterFromClass: 'hidden', enterActiveClass: 'p-anchored-overlay-enter-active', leaveToClass: 'hidden', leaveActiveClass: 'p-anchored-overlay-leave-active', hideOnOutsideClick: true }"
+                        v-styleclass="{
+                            selector: '@next',
+                            enterFromClass: 'hidden',
+                            enterActiveClass: 'p-anchored-overlay-enter-active',
+                            leaveToClass: 'hidden',
+                            leaveActiveClass: 'p-anchored-overlay-leave-active',
+                            hideOnOutsideClick: true
+                        }"
                         type="button"
                         class="layout-topbar-action layout-topbar-action-highlight"
                     >
@@ -51,27 +101,43 @@ const { toggleMenu, toggleDarkMode, isDarkTheme } = useLayout();
                 </div>
             </div>
 
+            <!-- MOBILE MENU BUTTON -->
             <button
                 class="layout-topbar-menu-button layout-topbar-action"
-                v-styleclass="{ selector: '@next', enterFromClass: 'hidden', enterActiveClass: 'p-anchored-overlay-enter-active', leaveToClass: 'hidden', leaveActiveClass: 'p-anchored-overlay-leave-active', hideOnOutsideClick: true }"
+                v-styleclass="{
+                    selector: '@next',
+                    enterFromClass: 'hidden',
+                    enterActiveClass: 'p-anchored-overlay-enter-active',
+                    leaveToClass: 'hidden',
+                    leaveActiveClass: 'p-anchored-overlay-leave-active',
+                    hideOnOutsideClick: true
+                }"
             >
                 <i class="pi pi-ellipsis-v"></i>
             </button>
 
+            <!-- TOPBAR MENU -->
             <div class="layout-topbar-menu hidden lg:block">
                 <div class="layout-topbar-menu-content">
-                    <button type="button" class="layout-topbar-action">
+                    <!-- CALENDARIO -->
+                    <button type="button" class="layout-topbar-action" @click="router.push('/calendar')">
                         <i class="pi pi-calendar"></i>
-                        <span>Calendar</span>
+                        <span>Calendario</span>
                     </button>
+
+                    <!-- MENSAJES (SE QUEDA IGUAL) -->
                     <button type="button" class="layout-topbar-action">
                         <i class="pi pi-inbox"></i>
                         <span>Messages</span>
                     </button>
-                    <button type="button" class="layout-topbar-action">
+
+                    <!-- PERFIL -->
+                    <button type="button" class="layout-topbar-action" @click="toggleProfileMenu">
                         <i class="pi pi-user"></i>
-                        <span>Profile</span>
+                        <span>Perfil</span>
                     </button>
+
+                    <Menu ref="profileMenu" :model="profileItems" popup />
                 </div>
             </div>
         </div>

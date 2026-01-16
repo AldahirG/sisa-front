@@ -8,13 +8,22 @@
         "lint": "eslint --fix . --ext .vue,.js,.jsx,.cjs,.mjs --fix --ignore-path .gitignore"
     },
     "dependencies": {
+        "@fullcalendar/core": "^6.1.20",
+        "@fullcalendar/daygrid": "^6.1.20",
+        "@fullcalendar/interaction": "^6.1.20",
+        "@fullcalendar/vue3": "^6.1.20",
         "@primeuix/themes": "^2.0.0",
+        "axios": "^1.13.2",
         "chart.js": "3.3.2",
+        "papaparse": "^5.5.3",
+        "pinia": "^3.0.4",
+        "primeflex": "^4.0.0",
         "primeicons": "^7.0.0",
         "primevue": "^4.5.2",
         "tailwindcss-primeui": "^0.6.0",
         "vue": "^3.4.34",
-        "vue-router": "^4.4.0"
+        "vue-router": "^4.4.0",
+        "xlsx": "^0.18.5"
     },
     "devDependencies": {
         "@primevue/auto-import-resolver": "^4.3.1",
