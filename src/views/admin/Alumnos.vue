@@ -163,10 +163,10 @@ const guardarAlumno = async () => {
                 cuatrimestre: form.value.cuatrimestre,
                 estado: form.value.estado
             });
-            toast.add({ severity: 'success', summary: 'Alumno actualizado' });
+            toast.add({ severity: 'success', summary: 'Alumno actualizado', life: 6000 });
         } else {
             await api.post('/users/create-alumno', form.value);
-            toast.add({ severity: 'success', summary: 'Alumno creado correctamente' });
+            toast.add({ severity: 'success', summary: 'Alumno creado correctamente', life: 6000 });
         }
 
         showDialog.value = false;
@@ -175,7 +175,8 @@ const guardarAlumno = async () => {
         toast.add({
             severity: 'error',
             summary: 'Error',
-            detail: e.response?.data?.message || 'No se pudo guardar'
+            detail: e.response?.data?.message || 'No se pudo guardar',
+            life: 6000
         });
     }
 };
@@ -202,7 +203,9 @@ const onFileUpload = (event) => {
         toast.add({
             severity: 'warn',
             summary: 'Archivo no válido',
-            detail: 'Solo CSV o Excel (.xlsx)'
+            detail: 'Solo CSV o Excel (.xlsx)',
+            life: 6000
+
         });
     }
 };
