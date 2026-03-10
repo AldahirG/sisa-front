@@ -13,6 +13,7 @@ import Dialog from 'primevue/dialog';
 import Dropdown from 'primevue/dropdown';
 import InputNumber from 'primevue/inputnumber';
 import InputText from 'primevue/inputtext';
+import MultiSelect from 'primevue/multiselect';
 import Tag from 'primevue/tag';
 import Textarea from 'primevue/textarea';
 
@@ -55,9 +56,41 @@ function resetForm() {
         nombre: '',
         descripcion: '',
         cupo_total: 1,
-        activa: true
+        activa: true,
+        carreras: []
     };
 }
+
+const carrerasCatalogo = ref([
+    { label: 'LCP', value: 'LCP' },
+    { label: 'LCO', value: 'LCO' },
+    { label: 'CORP', value: 'CORP' },
+    { label: 'LED', value: 'LED' },
+    { label: 'LID', value: 'LID' },
+    { label: 'LPE', value: 'LPE' },
+    { label: 'LPS', value: 'LPS' },
+    { label: 'LRI', value: 'LRI' },
+    { label: 'RICP', value: 'RICP' },
+    { label: 'RIEC', value: 'RIEC' },
+    { label: 'LAE', value: 'LAE' },
+    { label: 'LAET', value: 'LAET' },
+    { label: 'LANI', value: 'LANI' },
+    { label: 'LAM', value: 'LAM' },
+    { label: 'LCE', value: 'LCE' },
+    { label: 'LEF', value: 'LEF' },
+    { label: 'LEMP', value: 'LEMP' },
+    { label: 'ARQ', value: 'ARQ' },
+    { label: 'LADD', value: 'LADD' },
+    { label: 'LDG', value: 'LDG' },
+    { label: 'LDI', value: 'LDI' },
+    { label: 'LDM', value: 'LDM' },
+    { label: 'IAM', value: 'IAM' },
+    { label: 'ICI', value: 'ICI' },
+    { label: 'IISCA', value: 'IISCA' },
+    { label: 'IME', value: 'IME' },
+    { label: 'IMI', value: 'IMI' },
+    { label: 'ISC', value: 'ISC' }
+]);
 
 // ==========================
 // LOADERS
@@ -127,18 +160,19 @@ const openEdit = (row) => {
         nombre: row.nombre ?? '',
         descripcion: row.descripcion ?? '',
         cupo_total: row.cupo_total ?? 1,
-        activa: row.activa ?? true
+        activa: row.activa ?? true,
+        carreras: row.carreras ?? []
     };
 
     dialogVisible.value = true;
 };
 
 const saveVacante = async () => {
-    if (!vacanteForm.value.id_empresa || !vacanteForm.value.id_periodo) {
+    if (!vacanteForm.value.id_empresa || !vacanteForm.value.id_periodo || !vacanteForm.value.carreras.length) {
         toast.add({
             severity: 'warn',
             summary: 'Campos incompletos',
-            detail: 'Selecciona empresa y periodo',
+            detail: 'Debe seleccionar empresa, periodo y al menos una carrera',
             life: 3000
         });
         return;
@@ -333,6 +367,16 @@ const cupoSeverity = (row) => {
                             Cupo total
                         </label>
                         <InputNumber v-model="vacanteForm.cupo_total" :min="1" showButtons />
+                    </div>
+
+                    <!-- Carreras -->
+                    <div class="form-field" style="grid-column: span 2">
+                        <label>
+                            <i class="pi pi-tags" />
+                            Carreras permitidas
+                        </label>
+
+                        <MultiSelect v-model="vacanteForm.carreras" :options="carrerasCatalogo" optionLabel="label" optionValue="value" placeholder="Selecciona carreras" display="chip" class="w-full" />
                     </div>
 
                     <!-- Descripción -->
