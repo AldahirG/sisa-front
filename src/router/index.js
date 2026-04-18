@@ -7,7 +7,7 @@ import { useAuthStore } from '@/store/auth';
 // ================================
 // AUTH
 // ================================
-import Login from '@/views/pages/auth/Login.vue';
+import Login from '@/views/auth/Login.vue';
 
 // ================================
 // VISTAS COMPARTIDAS
@@ -38,6 +38,8 @@ const AdminPostulaciones = () => import('@/views/admin/Postulaciones.vue');
 const AdminControlAcademico = () => import('@/views/admin/ControlAcademico.vue');
 const AdminControlAcademicoDetalle = () => import('@/views/admin/ControlAcademicoDetalle.vue');
 const AdminControlUsuarios = () => import('@/views/admin/Alumnos.vue');
+const AdminEncuestas       = () => import('@/views/admin/Encuestas.vue');
+const AdminNivelesPractica = () => import('@/views/admin/NivelesPractica.vue');
 
 // ================================
 // ROUTES
@@ -182,6 +184,16 @@ const routes = [
                 path: 'alumnos',
                 name: 'admin-control-alumnos',
                 component: AdminControlUsuarios
+            },
+            {
+                path: 'encuestas',
+                name: 'admin-encuestas',
+                component: AdminEncuestas
+            },
+            {
+                path: 'niveles-practica',
+                name: 'admin-niveles-practica',
+                component: AdminNivelesPractica
             }
         ]
     },

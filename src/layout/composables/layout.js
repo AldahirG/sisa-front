@@ -1,12 +1,43 @@
 import { computed, reactive } from 'vue';
 
+// ── Persistencia de preferencias ─────────────────────────────────
+const STORAGE_KEY = 'sisa-layout';
+
+function loadPrefs() {
+    try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        return raw ? JSON.parse(raw) : {};
+    } catch {
+        return {};
+    }
+}
+
+function savePrefs(config) {
+    try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({
+            preset:    config.preset,
+            primary:   config.primary,
+            surface:   config.surface,
+            darkTheme: config.darkTheme,
+            menuMode:  config.menuMode
+        }));
+    } catch { /* storage not available */ }
+}
+
+const prefs = loadPrefs();
+
 const layoutConfig = reactive({
-    preset: 'Aura',
-    primary: 'emerald',
-    surface: null,
-    darkTheme: false,
-    menuMode: 'static'
+    preset:    prefs.preset    ?? 'Aura',
+    primary:   prefs.primary   ?? 'blue',
+    surface:   prefs.surface   ?? 'slate',
+    darkTheme: prefs.darkTheme ?? false,
+    menuMode:  prefs.menuMode  ?? 'static'
 });
+
+// Aplicar dark mode guardado al arrancar
+if (layoutConfig.darkTheme) {
+    document.documentElement.classList.add('app-dark');
+}
 
 const layoutState = reactive({
     staticMenuDesktopInactive: false,
@@ -36,6 +67,7 @@ export function useLayout() {
     const executeDarkModeToggle = () => {
         layoutConfig.darkTheme = !layoutConfig.darkTheme;
         document.documentElement.classList.toggle('app-dark');
+        savePrefs(layoutConfig);
     };
 
     const toggleMenu = () => {
@@ -58,6 +90,8 @@ export function useLayout() {
 
     const getSurface = computed(() => layoutConfig.surface);
 
+    const saveLayoutPrefs = () => savePrefs(layoutConfig);
+
     return {
         layoutConfig,
         layoutState,
@@ -67,6 +101,7 @@ export function useLayout() {
         getPrimary,
         getSurface,
         setActiveMenuItem,
-        toggleDarkMode
+        toggleDarkMode,
+        saveLayoutPrefs
     };
 }

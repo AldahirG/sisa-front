@@ -2,17 +2,20 @@
 import api from '@/api/axios';
 import { useConfirm } from 'primevue/useconfirm';
 import { useToast } from 'primevue/usetoast';
-import { onMounted, ref, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 
 // PrimeVue
 import Button from 'primevue/button';
-import Calendar from 'primevue/calendar';
 import Column from 'primevue/column';
+import ConfirmDialog from 'primevue/confirmdialog';
 import DataTable from 'primevue/datatable';
+import DatePicker from 'primevue/datepicker';
 import Dialog from 'primevue/dialog';
-import Dropdown from 'primevue/dropdown';
 import InputText from 'primevue/inputtext';
+import Select from 'primevue/select';
+import Tag from 'primevue/tag';
 import Textarea from 'primevue/textarea';
+import Toast from 'primevue/toast';
 
 const toast = useToast();
 const confirm = useConfirm();
@@ -39,11 +42,52 @@ const entregableForm = ref({
 });
 
 // =======================
-// LOAD PERIODOS (SOLO ACTIVOS)
+// COMPUTED – period info badge
+// =======================
+const periodoBadgeInfo = computed(() => {
+    const p = periodoSeleccionado.value;
+    if (!p) return null;
+    return {
+        rango: `${formatDateDisplay(p.fecha_inicio)} → ${formatDateDisplay(p.fecha_fin)}`,
+        estado: p.estado
+    };
+});
+
+// =======================
+// HELPERS
+// =======================
+const formatDateDisplay = (dateStr) => {
+    if (!dateStr) return '—';
+    const d = new Date(dateStr + 'T00:00:00');
+    return d.toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' });
+};
+
+const isVencido = (fechaLimite) => {
+    if (!fechaLimite) return false;
+    const limite = new Date(fechaLimite + 'T23:59:59');
+    return limite < new Date();
+};
+
+// =======================
+// LOAD PERIODOS
 // =======================
 const loadPeriodos = async () => {
-    const { data } = await api.get('/periodos');
-    periodos.value = data.filter((p) => p.estado === 'activo');
+    try {
+        const { data } = await api.get('/periodos');
+        periodos.value = data;
+        // AUTO-SELECT: active period first, fallback to first
+        periodoSeleccionado.value = data.find((p) => p.estado === 'activo') ?? data[0] ?? null;
+        if (periodoSeleccionado.value) {
+            await loadEntregables();
+        }
+    } catch {
+        toast.add({
+            severity: 'error',
+            summary: 'Error',
+            detail: 'No se pudieron cargar los periodos',
+            life: 4000
+        });
+    }
 };
 
 // =======================
@@ -77,10 +121,11 @@ const openNew = () => {
     isEdit.value = false;
     entregableForm.value = {
         id_entregable: null,
-        id_periodo: periodoSeleccionado.value.id_periodo,
+        id_periodo: periodoSeleccionado.value?.id_periodo ?? null,
         numero: null,
         nombre: '',
         descripcion: '',
+        fecha_inicio: null,
         fecha_limite: null
     };
     dialogVisible.value = true;
@@ -90,9 +135,9 @@ const editEntregable = (row) => {
     isEdit.value = true;
     entregableForm.value = {
         ...row,
-        id_periodo: periodoSeleccionado.value.id_periodo,
-        fecha_inicio: row.fecha_inicio ? new Date(row.fecha_inicio) : null,
-        fecha_limite: new Date(row.fecha_limite)
+        id_periodo: periodoSeleccionado.value?.id_periodo ?? row.id_periodo,
+        fecha_inicio: row.fecha_inicio ? new Date(row.fecha_inicio + 'T00:00:00') : null,
+        fecha_limite: row.fecha_limite ? new Date(row.fecha_limite + 'T00:00:00') : null
     };
     dialogVisible.value = true;
 };
@@ -117,25 +162,15 @@ const saveEntregable = async () => {
         const payload = {
             ...entregableForm.value,
             fecha_inicio: fecha_inicio ? fecha_inicio.toISOString().split('T')[0] : null,
-            fecha_limite: fecha_limite.toISOString().split('T')[0]
+            fecha_limite: fecha_limite ? fecha_limite.toISOString().split('T')[0] : null
         };
 
         if (isEdit.value) {
             await api.put(`/entregables/${payload.id_entregable}`, payload);
-            toast.add({
-                severity: 'success',
-                summary: 'Actualizado',
-                detail: 'Entregable actualizado',
-                life: 3000
-            });
+            toast.add({ severity: 'success', summary: 'Actualizado', detail: 'Entregable actualizado', life: 3000 });
         } else {
             await api.post('/entregables', payload);
-            toast.add({
-                severity: 'success',
-                summary: 'Creado',
-                detail: 'Entregable creado',
-                life: 3000
-            });
+            toast.add({ severity: 'success', summary: 'Creado', detail: 'Entregable creado', life: 3000 });
         }
 
         dialogVisible.value = false;
@@ -153,22 +188,22 @@ const saveEntregable = async () => {
 // =======================
 // DELETE
 // =======================
-const confirmDelete = (event, row) => {
+const confirmDelete = (row) => {
     confirm.require({
-        target: event.currentTarget,
-        message: '¿Eliminar este entregable?',
+        message: `¿Eliminar el entregable "${row.nombre}"?`,
+        header: 'Confirmar eliminación',
         icon: 'pi pi-exclamation-triangle',
         acceptLabel: 'Eliminar',
         rejectLabel: 'Cancelar',
+        acceptClass: 'p-button-danger',
         accept: async () => {
-            await api.delete(`/entregables/${row.id_entregable}`);
-            toast.add({
-                severity: 'success',
-                summary: 'Eliminado',
-                detail: 'Entregable eliminado',
-                life: 3000
-            });
-            loadEntregables();
+            try {
+                await api.delete(`/entregables/${row.id_entregable}`);
+                toast.add({ severity: 'success', summary: 'Eliminado', detail: 'Entregable eliminado', life: 3000 });
+                loadEntregables();
+            } catch {
+                toast.add({ severity: 'error', summary: 'Error', detail: 'No se pudo eliminar el entregable', life: 4000 });
+            }
         }
     });
 };
@@ -177,276 +212,469 @@ onMounted(loadPeriodos);
 </script>
 
 <template>
-    <div class="card">
-        <!-- ===================== -->
-        <!-- HEADER -->
-        <!-- ===================== -->
-        <div class="flex justify-between items-center mb-4">
-            <h5 class="m-0">Entregables</h5>
-            <Button label="Nuevo entregable" icon="pi pi-plus" :disabled="!periodoSeleccionado" @click="openNew" />
-        </div>
-
-        <!-- ===================== -->
-        <!-- SELECT PERIODO -->
-        <!-- ===================== -->
-        <div class="mb-4">
-            <Dropdown v-model="periodoSeleccionado" :options="periodos" optionLabel="nombre" placeholder="Selecciona periodo activo" class="w-full md:w-25rem" />
-        </div>
-
-        <!-- ===================== -->
-        <!-- TABLA -->
-        <!-- ===================== -->
-        <DataTable :value="entregables" :loading="loading" paginator :rows="10" responsiveLayout="scroll">
-            <Column field="numero" header="#" style="width: 80px" />
-
-            <Column field="nombre" header="Entregable" />
-
-            <Column field="descripcion" header="Descripción" />
-
-            <!-- RANGO DE FECHAS -->
-            <Column header="Disponibilidad">
-                <template #body="{ data }">
-                    <span v-if="data.fecha_inicio"> {{ data.fecha_inicio }} → {{ data.fecha_limite }} </span>
-                    <span v-else> — → {{ data.fecha_limite }} </span>
-                </template>
-            </Column>
-
-            <!-- ACCIONES -->
-            <Column header="Acciones" style="width: 140px">
-                <template #body="{ data }">
-                    <Button icon="pi pi-pencil" text @click="editEntregable(data)" />
-                    <Button icon="pi pi-trash" text severity="danger" @click="confirmDelete($event, data)" />
-                </template>
-            </Column>
-        </DataTable>
-
-        <!-- ===================== -->
-        <!-- MODAL -->
-        <!-- ===================== -->
-        <Dialog v-model:visible="dialogVisible" modal :header="isEdit ? '📦 Editar entregable' : '📦 Nuevo entregable'" :style="{ width: '640px' }" :breakpoints="{ '960px': '90vw', '640px': '95vw' }" :pt="{ content: { class: 'w-full' } }">
-            <div class="entregable-form">
-                <!-- ===================== -->
-                <!-- FILA 1 -->
-                <!-- ===================== -->
-                <div class="field number">
-                    <label>
-                        <i class="pi pi-sort-numeric-up" />
-                        Número
-                    </label>
-                    <InputText v-model="entregableForm.numero" />
-                </div>
-
-                <div class="field name">
-                    <label>
-                        <i class="pi pi-box" />
-                        Nombre
-                    </label>
-                    <InputText v-model="entregableForm.nombre" />
-                </div>
-
-                <!-- ===================== -->
-                <!-- FILA 2 -->
-                <!-- ===================== -->
-                <div class="field description">
-                    <label>
-                        <i class="pi pi-align-left" />
-                        Descripción
-                    </label>
-                    <Textarea v-model="entregableForm.descripcion" rows="4" autoResize />
-                </div>
-
-                <!-- ===================== -->
-                <!-- FILA 3 – RANGO DE FECHAS -->
-                <!-- ===================== -->
-                <div class="field date-range">
-                    <div class="date-field">
-                        <label>
-                            <i class="pi pi-calendar-plus" />
-                            Fecha inicio
-                        </label>
-                        <Calendar v-model="entregableForm.fecha_inicio" showIcon dateFormat="dd-mm-yy" :maxDate="entregableForm.fecha_limite" />
-                    </div>
-
-                    <!-- <span class="date-separator">a</span> -->
-                    <div class="date-field">
-                        <label>
-                            <i class="pi pi-calendar-times" />
-                            Fecha fin
-                        </label>
-                        <Calendar v-model="entregableForm.fecha_limite" showIcon dateFormat="dd-mm-yy" :minDate="entregableForm.fecha_inicio" />
-                    </div>
+    <div class="page-container">
+        <!-- ══════════════════════════════════
+             HEADER BAR
+        ══════════════════════════════════ -->
+        <div class="page-header">
+            <!-- Title group -->
+            <div class="page-title-group">
+                <span class="page-icon">
+                    <i class="pi pi-box" />
+                </span>
+                <div>
+                    <h4 class="page-title">Entregables</h4>
+                    <p class="page-subtitle">Gestiona los entregables por período</p>
                 </div>
             </div>
 
-            <!-- ===================== -->
-            <!-- FOOTER -->
-            <!-- ===================== -->
+            <!-- Controls -->
+            <div class="header-controls">
+                <Select
+                    v-model="periodoSeleccionado"
+                    :options="periodos"
+                    optionLabel="nombre"
+                    placeholder="Seleccionar período"
+                    class="periodo-select"
+                />
+                <Button
+                    label="Nuevo entregable"
+                    icon="pi pi-plus"
+                    :disabled="!periodoSeleccionado"
+                    @click="openNew"
+                />
+            </div>
+        </div>
+
+        <!-- ══════════════════════════════════
+             PERIOD INFO BADGE
+        ══════════════════════════════════ -->
+        <div v-if="periodoBadgeInfo" class="period-info-bar">
+            <div class="period-info-dates">
+                <i class="pi pi-calendar-range info-icon" />
+                <span>{{ periodoBadgeInfo.rango }}</span>
+            </div>
+            <Tag
+                :value="periodoBadgeInfo.estado === 'activo' ? 'Activo' : 'Cerrado'"
+                :severity="periodoBadgeInfo.estado === 'activo' ? 'success' : 'secondary'"
+            />
+        </div>
+
+        <!-- ══════════════════════════════════
+             EMPTY SELECTION STATE
+        ══════════════════════════════════ -->
+        <div v-if="!periodoSeleccionado && !loading" class="empty-state">
+            <i class="pi pi-inbox empty-icon" />
+            <p class="empty-text">Selecciona un período para ver sus entregables</p>
+        </div>
+
+        <!-- ══════════════════════════════════
+             TABLE
+        ══════════════════════════════════ -->
+        <div v-else class="table-panel">
+            <DataTable
+                :value="entregables"
+                :loading="loading"
+                paginator
+                :rows="10"
+                responsiveLayout="scroll"
+                stripedRows
+                :rowHover="true"
+                class="entregables-table"
+            >
+                <!-- # -->
+                <Column field="numero" header="#" style="width: 60px; text-align: center" />
+
+                <!-- Nombre -->
+                <Column field="nombre" header="Entregable">
+                    <template #body="{ data }">
+                        <span class="entregable-name">{{ data.nombre }}</span>
+                    </template>
+                </Column>
+
+                <!-- Descripcion -->
+                <Column field="descripcion" header="Descripción">
+                    <template #body="{ data }">
+                        <span class="desc-text">{{ data.descripcion || '—' }}</span>
+                    </template>
+                </Column>
+
+                <!-- Disponibilidad -->
+                <Column header="Disponibilidad">
+                    <template #body="{ data }">
+                        <div class="date-range-cell">
+                            <span v-if="data.fecha_inicio" class="date-chip start">
+                                {{ formatDateDisplay(data.fecha_inicio) }}
+                            </span>
+                            <i class="pi pi-arrow-right date-arrow" />
+                            <span class="date-chip end" :class="{ vencido: isVencido(data.fecha_limite) }">
+                                {{ formatDateDisplay(data.fecha_limite) }}
+                            </span>
+                        </div>
+                    </template>
+                </Column>
+
+                <!-- Estado plazo -->
+                <Column header="Plazo" style="width: 120px">
+                    <template #body="{ data }">
+                        <span
+                            class="plazo-chip"
+                            :class="isVencido(data.fecha_limite) ? 'plazo-vencido' : 'plazo-vigente'"
+                        >
+                            <i :class="isVencido(data.fecha_limite) ? 'pi pi-clock' : 'pi pi-check-circle'" />
+                            {{ isVencido(data.fecha_limite) ? 'Vencido' : 'Vigente' }}
+                        </span>
+                    </template>
+                </Column>
+
+                <!-- Acciones -->
+                <Column header="Acciones" style="width: 100px">
+                    <template #body="{ data }">
+                        <div class="action-btns">
+                            <Button icon="pi pi-pencil" text size="small" v-tooltip="'Editar'" @click="editEntregable(data)" />
+                            <Button icon="pi pi-trash" text size="small" severity="danger" v-tooltip="'Eliminar'" @click="confirmDelete(data)" />
+                        </div>
+                    </template>
+                </Column>
+            </DataTable>
+        </div>
+
+        <!-- ══════════════════════════════════
+             FORM DIALOG
+        ══════════════════════════════════ -->
+        <Dialog
+            v-model:visible="dialogVisible"
+            modal
+            :header="isEdit ? 'Editar entregable' : 'Nuevo entregable'"
+            :style="{ width: '640px' }"
+            :breakpoints="{ '960px': '90vw', '640px': '95vw' }"
+        >
+            <div class="entregable-form">
+                <!-- Número -->
+                <div class="field number-field">
+                    <label class="field-label">
+                        <i class="pi pi-sort-numeric-up" />
+                        Número
+                    </label>
+                    <InputText v-model="entregableForm.numero" class="w-full" type="number" />
+                </div>
+
+                <!-- Nombre -->
+                <div class="field name-field">
+                    <label class="field-label">
+                        <i class="pi pi-box" />
+                        Nombre
+                    </label>
+                    <InputText v-model="entregableForm.nombre" placeholder="Nombre del entregable" class="w-full" />
+                </div>
+
+                <!-- Descripción -->
+                <div class="field full-field">
+                    <label class="field-label">
+                        <i class="pi pi-align-left" />
+                        Descripción
+                    </label>
+                    <Textarea v-model="entregableForm.descripcion" rows="3" autoResize class="w-full" />
+                </div>
+
+                <!-- Fechas -->
+                <div class="field">
+                    <label class="field-label">
+                        <i class="pi pi-calendar-plus" />
+                        Fecha inicio
+                    </label>
+                    <DatePicker
+                        v-model="entregableForm.fecha_inicio"
+                        showIcon
+                        dateFormat="dd/mm/yy"
+                        :maxDate="entregableForm.fecha_limite"
+                        class="w-full"
+                    />
+                </div>
+
+                <div class="field">
+                    <label class="field-label">
+                        <i class="pi pi-calendar-times" />
+                        Fecha límite
+                    </label>
+                    <DatePicker
+                        v-model="entregableForm.fecha_limite"
+                        showIcon
+                        dateFormat="dd/mm/yy"
+                        :minDate="entregableForm.fecha_inicio"
+                        class="w-full"
+                    />
+                </div>
+            </div>
+
             <template #footer>
-                <div class="flex justify-end gap-2 w-full">
+                <div class="dialog-footer">
                     <Button label="Cancelar" icon="pi pi-times" text @click="dialogVisible = false" />
                     <Button label="Guardar" icon="pi pi-check" severity="success" @click="saveEntregable" />
                 </div>
             </template>
         </Dialog>
+
+        <ConfirmDialog />
+        <Toast />
     </div>
 </template>
+
 <style scoped>
-/* =======================
-   FORM LAYOUT
-======================= */
+/* ══════════════════════════════════
+   PAGE LAYOUT
+══════════════════════════════════ */
+.page-container {
+    padding: 1.5rem;
+}
+
+/* ══════════════════════════════════
+   HEADER
+══════════════════════════════════ */
+.page-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1.25rem;
+    flex-wrap: wrap;
+}
+
+.page-title-group {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex-shrink: 0;
+}
+
+.page-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.75rem;
+    height: 2.75rem;
+    border-radius: .75rem;
+    background: var(--sisa-tint-purple);
+    color: var(--sisa-icon-purple);
+    font-size: 1.2rem;
+    flex-shrink: 0;
+}
+
+.page-title {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--p-text-color);
+    line-height: 1.2;
+}
+
+.page-subtitle {
+    margin: .15rem 0 0;
+    font-size: .82rem;
+    color: var(--p-text-muted-color);
+}
+
+.header-controls {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    flex-wrap: wrap;
+}
+
+.periodo-select {
+    min-width: 220px;
+}
+
+/* ══════════════════════════════════
+   PERIOD INFO BAR
+══════════════════════════════════ */
+.period-info-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: .65rem 1rem;
+    border-radius: .5rem;
+    background: var(--sisa-tint-blue);
+    border: 1px solid var(--p-content-border-color);
+    margin-bottom: 1.25rem;
+}
+
+.period-info-dates {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    font-size: .85rem;
+    color: var(--p-text-color);
+    font-weight: 500;
+}
+
+.info-icon {
+    color: var(--sisa-icon-blue);
+    font-size: .9rem;
+}
+
+/* ══════════════════════════════════
+   EMPTY STATE
+══════════════════════════════════ */
+.empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+    padding: 4rem 2rem;
+    color: var(--p-text-muted-color);
+}
+
+.empty-icon {
+    font-size: 3rem;
+    opacity: .3;
+}
+
+.empty-text {
+    margin: 0;
+    font-size: .95rem;
+}
+
+/* ══════════════════════════════════
+   TABLE PANEL
+══════════════════════════════════ */
+.table-panel {
+    border-radius: .75rem;
+    border: 1px solid var(--p-content-border-color);
+    overflow: hidden;
+    background: var(--p-content-background);
+}
+
+.entregable-name {
+    font-weight: 600;
+    color: var(--p-text-color);
+}
+
+.desc-text {
+    font-size: .83rem;
+    color: var(--p-text-muted-color);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+/* ── Date range cell ──────────── */
+.date-range-cell {
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+    flex-wrap: wrap;
+}
+
+.date-chip {
+    font-size: .78rem;
+    font-weight: 500;
+    padding: .2rem .5rem;
+    border-radius: .35rem;
+    background: var(--p-content-border-color);
+    color: var(--p-text-color);
+}
+
+.date-chip.vencido {
+    background: var(--sisa-tint-red);
+    color: var(--sisa-icon-red);
+}
+
+.date-arrow {
+    font-size: .65rem;
+    color: var(--p-text-muted-color);
+}
+
+/* ── Plazo chip ───────────────── */
+.plazo-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: .3rem;
+    font-size: .75rem;
+    font-weight: 600;
+    padding: .25rem .6rem;
+    border-radius: .5rem;
+}
+
+.plazo-vigente {
+    background: var(--sisa-tint-green);
+    color: var(--sisa-icon-green);
+}
+
+.plazo-vencido {
+    background: var(--sisa-tint-red);
+    color: var(--sisa-icon-red);
+}
+
+.action-btns {
+    display: flex;
+    gap: .15rem;
+}
+
+/* ══════════════════════════════════
+   FORM DIALOG
+══════════════════════════════════ */
 .entregable-form {
     display: grid;
-    grid-template-columns: 120px 1fr;
+    grid-template-columns: 110px 1fr;
     gap: 1.25rem;
-    width: 100%;
+    padding: .25rem 0;
 }
 
-/* =======================
-   CAMPOS BASE
-======================= */
-.entregable-form .field {
+.field {
     display: flex;
     flex-direction: column;
-    gap: 0.4rem;
+    gap: .45rem;
 }
 
-.entregable-form label {
-    font-weight: 500;
-    font-size: 0.8rem;
-    color: var(--text-color-secondary);
+.field-label {
+    font-size: .78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    color: var(--p-text-muted-color);
     display: flex;
     align-items: center;
-    gap: 0.4rem;
+    gap: .4rem;
 }
 
-/* =======================
-   PROPORCIONES UX
-======================= */
-.entregable-form .number {
-    grid-column: 1 / 2;
-}
+.number-field { grid-column: 1 / 2; }
+.name-field   { grid-column: 2 / 3; }
+.full-field   { grid-column: 1 / 3; }
 
-.entregable-form .name {
-    grid-column: 2 / 3;
-}
-
-.entregable-form .description {
-    grid-column: 1 / 3;
-}
-
-/* =======================
-   RANGO DE FECHAS
-======================= */
-.entregable-form .date-range {
-    grid-column: 1 / 3;
-    display: grid;
-    grid-template-columns: 1fr auto 1fr;
-    align-items: end;
-    gap: 1rem;
-    margin-top: 0.5rem;
-}
-
-.entregable-form .date-field {
+.dialog-footer {
     display: flex;
-    flex-direction: column;
-    gap: 0.35rem;
+    justify-content: flex-end;
+    gap: .75rem;
 }
 
-.entregable-form .date-field label {
-    font-size: 0.8rem;
-    font-weight: 600;
-    color: var(--text-color-secondary);
-}
-
-.entregable-form .date-separator {
-    font-weight: 600;
-    font-size: 0.85rem;
-    color: var(--text-color-secondary);
-    padding-bottom: 0.55rem;
-}
-
-/* =======================
-   ESTÉTICA INPUTS
-======================= */
-.p-calendar {
-    width: 100%;
-}
-
-.p-inputtext,
-.p-calendar .p-inputtext {
-    border-radius: 8px;
-}
-/* Contenedor vertical para múltiples entregables */
-.entregables-stack {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    margin-top: 18px;
-}
-
-/* Base */
-.entregable-row {
-    height: 18px;
-    border-radius: 4px;
-    font-size: 0.65rem;
-    display: flex;
-    align-items: center;
-    padding: 0 6px;
-    cursor: pointer;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-/* INICIO */
-.entregable-row.is-start {
-    background: var(--green-500);
-    color: var(--primary-color-text);
-    font-weight: 600;
-    border-top-left-radius: 6px;
-    border-bottom-left-radius: 6px;
-}
-
-/* CONTINUIDAD */
-.entregable-row.is-middle {
-    background: color-mix(in srgb, var(--green-500) 35%, transparent);
-}
-
-/* FIN */
-.entregable-row.is-end {
-    background: var(--green-700);
-    color: var(--primary-color-text);
-    font-weight: 600;
-    border-top-right-radius: 6px;
-    border-bottom-right-radius: 6px;
-}
-
-/* Hover */
-.entregable-row:hover {
-    filter: brightness(1.1);
-}
-
-/* =======================
+/* ══════════════════════════════════
    RESPONSIVE
-======================= */
+══════════════════════════════════ */
 @media (max-width: 640px) {
+    .page-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .header-controls {
+        width: 100%;
+    }
+
+    .periodo-select {
+        width: 100%;
+    }
+
     .entregable-form {
         grid-template-columns: 1fr;
     }
 
-    .entregable-form .number,
-    .entregable-form .name,
-    .entregable-form .description,
-    .entregable-form .date-range {
+    .number-field,
+    .name-field,
+    .full-field {
         grid-column: auto;
-    }
-
-    .entregable-form .date-range {
-        grid-template-columns: 1fr;
-    }
-
-    .entregable-form .date-separator {
-        display: none;
     }
 }
 </style>

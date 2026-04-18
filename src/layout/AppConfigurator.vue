@@ -6,7 +6,7 @@ import Lara from '@primeuix/themes/lara';
 import Nora from '@primeuix/themes/nora';
 import { ref } from 'vue';
 
-const { layoutConfig, isDarkTheme } = useLayout();
+const { layoutConfig, isDarkTheme, saveLayoutPrefs } = useLayout();
 
 const presets = {
     Aura,
@@ -175,6 +175,7 @@ function updateColors(type, color) {
     }
 
     applyTheme(type, color);
+    saveLayoutPrefs();
 }
 
 function applyTheme(type, color) {
@@ -191,10 +192,12 @@ function onPresetChange() {
     const surfacePalette = surfaces.value.find((s) => s.name === layoutConfig.surface)?.palette;
 
     $t().preset(presetValue).preset(getPresetExt()).surfacePalette(surfacePalette).use({ useDefaultOptions: true });
+    saveLayoutPrefs();
 }
 
 function onMenuModeChange() {
     layoutConfig.menuMode = menuMode.value;
+    saveLayoutPrefs();
 }
 </script>
 

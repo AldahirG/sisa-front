@@ -2,4 +2,36 @@
     --surface-ground: var(--p-surface-950);
     --code-background: var(--p-surface-800);
     --code-color: var(--p-surface-100);
+
+    /* ── Sobreescrituras dark mode SISA ───────────────────── */
+
+    /* Active state más visible en oscuro */
+    --sisa-active-bg: rgba(21, 101, 192, 0.18);
+
+    /* Fondos de íconos — oscuros pero legibles */
+    --sisa-tint-blue:   rgba(21, 101, 192, 0.22);
+    --sisa-tint-green:  rgba(16, 185, 129, 0.22);
+    --sisa-tint-amber:  rgba(245, 158, 11, 0.22);
+    --sisa-tint-purple: rgba(139, 92, 246, 0.22);
+    --sisa-tint-red:    rgba(239, 68, 68, 0.22);
+
+    /* Color de íconos — más brillantes sobre fondo oscuro */
+    --sisa-icon-blue:   #60a5fa;
+    --sisa-icon-green:  #34d399;
+    --sisa-icon-amber:  #fbbf24;
+    --sisa-icon-purple: #a78bfa;
+    --sisa-icon-red:    #f87171;
+
+    /* Superficie de acento */
+    --sisa-accent-surface: rgba(21, 101, 192, 0.1);
+
+    /* Banners de estado — oscuros */
+    --sisa-banner-danger-bg:  rgba(239, 68, 68, 0.12);
+    --sisa-banner-danger-bd:  rgba(239, 68, 68, 0.35);
+    --sisa-banner-info-bg:    rgba(21, 101, 192, 0.12);
+    --sisa-banner-info-bd:    rgba(21, 101, 192, 0.35);
+    --sisa-banner-success-bg: rgba(16, 185, 129, 0.12);
+    --sisa-banner-success-bd: rgba(16, 185, 129, 0.35);
+    --sisa-banner-warn-bg:    rgba(245, 158, 11, 0.12);
+    --sisa-banner-warn-bd:    rgba(245, 158, 11, 0.35);
 }

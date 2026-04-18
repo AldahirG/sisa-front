@@ -1,4 +1,5 @@
 <script setup>
+import NotificacionesBadge from '@/components/NotificacionesBadge.vue';
 import { useLayout } from '@/layout/composables/layout';
 import { ref } from 'vue';
 import { useRouter } from 'vue-router';
@@ -125,11 +126,8 @@ const profileItems = [
                         <span>Calendario</span>
                     </button>
 
-                    <!-- MENSAJES (SE QUEDA IGUAL) -->
-                    <button type="button" class="layout-topbar-action">
-                        <i class="pi pi-inbox"></i>
-                        <span>Messages</span>
-                    </button>
+                    <!-- NOTIFICACIONES -->
+                    <NotificacionesBadge />
 
                     <!-- PERFIL -->
                     <button type="button" class="layout-topbar-action" @click="toggleProfileMenu">
