@@ -208,10 +208,11 @@
                     <MultiSelect
                         v-model="form.carreras"
                         :options="carrerasCatalogo"
-                        option-label="label"
-                        option-value="value"
+                        option-label="nombre_completo"
+                        option-value="nombre"
                         placeholder="Selecciona carreras"
                         display="chip"
+                        filter
                         class="w-full"
                     />
                 </div>
@@ -380,6 +381,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import api from '@/api/axios'
+import { useCarreras } from '@/composables/useCarreras'
 import Select from 'primevue/select'
 import InputText from 'primevue/inputtext'
 import InputNumber from 'primevue/inputnumber'
@@ -426,12 +428,8 @@ const form = ref(resetForm())
 const dupForm = ref({ id_periodo_destino: null, cupo_total: null, activa: true })
 const importForm = ref({ id_periodo: null, archivo: null })
 
-// ── Carreras catalog ──────────────────────────────────
-const carrerasCatalogo = [
-    'LCP','LCO','CORP','LED','LID','LPE','LPS','LRI','RICP','RIEC',
-    'LAE','LAET','LANI','LAM','LCE','LEF','LEMP','ARQ','LADD','LDG',
-    'LDI','LDM','IAM','ICI','IISCA','IME','IMI','ISC'
-].map(c => ({ label: c, value: c }))
+// ── Carreras (desde API /carreras, cacheado) ──────────
+const { carreras: carrerasCatalogo } = useCarreras()
 
 // ── Computed ──────────────────────────────────────────
 const vacantesFiltered = computed(() => {

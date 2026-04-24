@@ -1,5 +1,6 @@
 <script setup>
 import api from '@/api/axios';
+import { useCarreras } from '@/composables/useCarreras';
 import { useToast } from 'primevue/usetoast';
 import { computed, onMounted, ref } from 'vue';
 import * as XLSX from 'xlsx';
@@ -20,11 +21,7 @@ const toast = useToast();
 // =====================
 // CATALOGS
 // =====================
-const carrerasCatalogo = [
-    'LCP','LCO','CORP','LED','LID','LPE','LPS','LRI','RICP','RIEC',
-    'LAE','LAET','LANI','LAM','LCE','LEF','LEMP','ARQ','LADD','LDG',
-    'LDI','LDM','IAM','ICI','IISCA','IME','IMI','ISC'
-].map(c => ({ label: c, value: c }));
+const { carreras: carrerasCatalogo } = useCarreras();
 
 const estadosOpciones = [
     { label: 'Activo', value: 'activo' },
@@ -389,9 +386,10 @@ const estadoSeverity = (estado) => {
                 <Select
                     v-model="filtros.carrera"
                     :options="carrerasCatalogo"
-                    optionLabel="label"
-                    optionValue="value"
+                    optionLabel="nombre_completo"
+                    optionValue="nombre"
                     placeholder="Carrera"
+                    filter
                     showClear
                 />
                 <Select
@@ -506,9 +504,10 @@ const estadoSeverity = (estado) => {
                 <Select
                     v-model="form.carrera"
                     :options="carrerasCatalogo"
-                    optionLabel="label"
-                    optionValue="value"
+                    optionLabel="nombre_completo"
+                    optionValue="nombre"
                     placeholder="Selecciona carrera"
+                    filter
                     class="w-full"
                 />
             </div>
