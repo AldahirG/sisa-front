@@ -26,24 +26,72 @@ const perfil = ref({
 
 // =======================
 // NORMALIZAR
-// Cubre todas las variantes posibles del backend:
-//   admin  → { nombre, correo, rol }
-//   alumno → { matricula, carrera, cuatrimestre, estado, usuario: { nombre, correo, rol } }
-//   o cualquier wrapper: { user: {...} }, { data: {...} }
+// Cubre todas las variantes posibles del backend.
+// Patrones conocidos:
+//   A) admin flat:  { nombre, correo, rol }
+//   B) alumno flat: { nombre, correo, rol, matricula, carrera, cuatrimestre, estado }
+//   C) alumno nested usuario:
+//      { matricula, carrera, cuatrimestre, estado, usuario: { nombre, correo, rol } }
+//   D) con wrapper alumno:
+//      { correo, rol, alumno: { matricula, carrera, cuatrimestre, estado,
+//                               usuario: { nombre } } }
+//   E) cualquier variante con user/data en lugar de usuario
 // =======================
 const normalizar = (raw) => {
-    if (!raw) return perfil.value;
+    if (!raw) return { ...perfil.value };
 
-    // Extraer el objeto usuario anidado (cualquier clave)
-    const u = raw?.usuario ?? raw?.user ?? raw?.data ?? {};
+    // --- Extraer sub-objetos posibles ---
+    const u  = raw?.usuario ?? raw?.user ?? raw?.data ?? {};     // nodo usuario
+    const al = raw?.alumno  ?? {};                                // nodo alumno (patrón D)
+    const au = al?.usuario  ?? al?.user  ?? {};                   // usuario dentro de alumno
 
-    const nombre       = u?.nombre       ?? raw?.nombre       ?? '';
-    const correo       = u?.correo       ?? raw?.correo       ?? '';
-    const rol          = u?.rol          ?? raw?.rol          ?? auth.user?.rol ?? '';
-    const matricula    = raw?.matricula  ?? u?.matricula      ?? '';
-    const carrera      = raw?.carrera    ?? u?.carrera        ?? '';
-    const cuatrimestre = raw?.cuatrimestre != null ? raw.cuatrimestre : (u?.cuatrimestre ?? '');
-    const estado       = raw?.estado     ?? u?.estado         ?? '';
+    // nombre: buscar en todos los niveles posibles
+    const nombre =
+        raw?.nombre  ??
+        u?.nombre    ??
+        au?.nombre   ??
+        al?.nombre   ??
+        '';
+
+    // correo
+    const correo =
+        raw?.correo  ??
+        u?.correo    ??
+        au?.correo   ??
+        '';
+
+    // rol
+    const rol =
+        raw?.rol     ??
+        u?.rol       ??
+        au?.rol      ??
+        auth.user?.rol ??
+        '';
+
+    // datos de alumno: pueden estar en raíz o dentro de raw.alumno
+    const matricula =
+        raw?.matricula    ??
+        al?.matricula     ??
+        u?.matricula      ??
+        '';
+
+    const carrera =
+        raw?.carrera      ??
+        al?.carrera       ??
+        u?.carrera        ??
+        '';
+
+    const cuatrimestre =
+        raw?.cuatrimestre != null ? raw.cuatrimestre :
+        al?.cuatrimestre  != null ? al.cuatrimestre  :
+        u?.cuatrimestre   != null ? u.cuatrimestre   :
+        '';
+
+    const estado =
+        raw?.estado       ??
+        al?.estado        ??
+        u?.estado         ??
+        '';
 
     return { nombre, correo, rol, matricula, carrera, cuatrimestre, estado };
 };
@@ -55,6 +103,8 @@ const cargarPerfil = async () => {
     loadingPerfil.value = true;
     try {
         const { data } = await api.get('/perfil');
+        // DEBUG — quitar después de confirmar estructura
+        console.log('[Perfil] raw response:', JSON.stringify(data, null, 2));
         const norm = normalizar(data);
         // Rol siempre del store si el back no lo manda
         if (!norm.rol) norm.rol = auth.user?.rol ?? '';
