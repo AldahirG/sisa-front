@@ -3,8 +3,8 @@ import { useToast } from 'primevue/usetoast';
 import { ref } from 'vue';
 import { useRouter } from 'vue-router';
 
-import api from '@/api/axios';
 import { useAuthStore } from '@/store/auth';
+import { DEMO_CREDENTIALS, DEMO_TOKEN } from '@/data/mock';
 
 // PrimeVue Components
 import FloatingConfigurator from '@/components/FloatingConfigurator.vue';
@@ -17,44 +17,41 @@ const router = useRouter();
 const auth = useAuthStore();
 const toast = useToast();
 
-const email = ref('');
-const password = ref('');
+// Pre-fill admin credentials for easy demo access
+const email = ref('admin@sisa.demo');
+const password = ref('demo1234');
 const checked = ref(false);
 const loading = ref(false);
 
 const onLogin = async () => {
-    try {
-        loading.value = true;
+    loading.value = true;
 
-        const { data } = await api.post('/auth/login', {
-            correo: email.value,
-            password: password.value
-        });
+    const match = DEMO_CREDENTIALS.find(
+        c => c.correo === email.value && c.password === password.value
+    );
 
-        auth.login(data.access_token, data.user);
-
-        toast.add({
-            severity: 'success',
-            summary: 'Bienvenido',
-            detail: `Sesión iniciada como ${data.user.rol}`,
-            life: 3000
-        });
-
-        if (data.user.rol === 'admin') {
-            router.push('/admin/dashboard');
-        } else {
-            router.push('/alumno/dashboard');
-        }
-    } catch (error) {
+    if (!match) {
         toast.add({
             severity: 'error',
             summary: 'Error de autenticación',
-            detail: 'Correo o contraseña incorrectos',
+            detail: 'Usa las credenciales demo: admin@sisa.demo / demo1234',
             life: 4000
         });
-    } finally {
         loading.value = false;
+        return;
     }
+
+    auth.login(DEMO_TOKEN, match.user);
+
+    toast.add({
+        severity: 'success',
+        summary: 'Bienvenido',
+        detail: `Sesión iniciada como ${match.user.rol}`,
+        life: 2000
+    });
+
+    router.push(match.redirect);
+    loading.value = false;
 };
 </script>
 
