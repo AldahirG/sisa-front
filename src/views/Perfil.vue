@@ -204,7 +204,7 @@ const logout = () => {
                                 <i class="pi pi-book"></i>{{ perfil.carrera }}
                             </span>
                             <span v-if="perfil.cuatrimestre !== ''" class="info-chip">
-                                <i class="pi pi-calendar"></i>{{ perfil.cuatrimestre }}° cuatrimestre
+                                <i class="pi pi-calendar"></i>{{ perfil.cuatrimestre }}° semestre
                             </span>
                         </div>
                     </div>
@@ -262,9 +262,9 @@ const logout = () => {
                             </div>
 
                             <div class="info-field">
-                                <span class="info-label">Cuatrimestre</span>
+                                <span class="info-label">Semestre</span>
                                 <span class="info-value">
-                                    {{ perfil.cuatrimestre !== '' ? `${perfil.cuatrimestre}°` : '—' }}
+                                    {{ perfil.cuatrimestre !== '' ? `${perfil.cuatrimestre}° semestre` : '—' }}
                                 </span>
                             </div>
 

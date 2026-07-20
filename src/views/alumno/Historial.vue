@@ -76,7 +76,7 @@
                                 <span class="info-value">{{ item.empresa?.categoria ?? '—' }}</span>
                             </div>
                             <div v-if="item.cuatrimestre" class="info-item">
-                                <span class="info-label"><i class="pi pi-graduation-cap"></i> Cuatrimestre</span>
+                                <span class="info-label"><i class="pi pi-graduation-cap"></i> Semestre</span>
                                 <span class="info-value">{{ item.cuatrimestre }}°</span>
                             </div>
                             <div class="info-item">

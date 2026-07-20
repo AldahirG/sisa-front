@@ -320,7 +320,7 @@ const bajaPracticas = () => {
                         <span class="field-value">{{ alumnoInfo.carrera }}</span>
                     </div>
                     <div class="field-item">
-                        <span class="field-label">Cuatrimestre</span>
+                        <span class="field-label">Semestre</span>
                         <span class="field-value">{{ alumnoInfo.cuatrimestre }}</span>
                     </div>
                     <div class="field-item">

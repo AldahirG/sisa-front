@@ -154,7 +154,7 @@ const onFiltroChange = () => loadNiveles();
                 </div>
                 <div class="header-text">
                     <h1 class="page-title">Niveles de Práctica</h1>
-                    <p class="page-subtitle">Plan de estudios: carrera → práctica → cuatrimestre</p>
+                    <p class="page-subtitle">Plan de estudios: carrera → práctica → semestre</p>
                 </div>
             </div>
 
@@ -230,12 +230,12 @@ const onFiltroChange = () => loadNiveles();
                 </Column>
 
                 <!-- CUATRIMESTRE -->
-                <Column header="Cuatrimestre" style="min-width: 150px">
+                <Column header="Semestre" style="min-width: 150px">
                     <template #body="{ data }">
                         <div class="cuatrimestre-cell">
                             <i class="pi pi-book cuatri-icon"></i>
                             <span class="cuatri-num">{{ data.cuatrimestre }}°</span>
-                            <span class="cuatri-lbl">cuatrimestre</span>
+                            <span class="cuatri-lbl">semestre</span>
                         </div>
                     </template>
                 </Column>
@@ -283,7 +283,7 @@ const onFiltroChange = () => loadNiveles();
             <div class="info-text">
                 <strong>¿Para qué sirve esta configuración?</strong>
                 Al avanzar semestres al final de un período, el sistema consulta esta tabla para saber
-                a qué cuatrimestre debe pasar cada alumno según su carrera y número de práctica actual.
+                a qué semestre debe pasar cada alumno según su carrera y número de práctica actual.
                 Los alumnos sin nivel configurado o dados de baja no se verán afectados.
             </div>
         </div>
@@ -326,7 +326,7 @@ const onFiltroChange = () => loadNiveles();
                     <small class="form-hint">¿Cuál práctica es? (1ª, 2ª…)</small>
                 </div>
                 <div class="form-field">
-                    <label class="form-label">Cuatrimestre <span class="required">*</span></label>
+                    <label class="form-label">Semestre <span class="required">*</span></label>
                     <InputNumber
                         v-model="form.cuatrimestre"
                         :min="1"
@@ -345,7 +345,7 @@ const onFiltroChange = () => loadNiveles();
                 <span>
                     Alumno de <strong>{{ form.carrera }}</strong> en su
                     <strong>práctica {{ form.numero_practica }}</strong> →
-                    debe estar en <strong>{{ form.cuatrimestre }}° cuatrimestre</strong>
+                    debe estar en <strong>{{ form.cuatrimestre }}° semestre</strong>
                 </span>
             </div>
         </div>

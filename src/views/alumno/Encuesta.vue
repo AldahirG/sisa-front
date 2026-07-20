@@ -28,7 +28,33 @@ const preguntas = computed(() =>
 // IDs de preguntas visibles — el payload solo envía estas
 const preguntasIds = computed(() => new Set(preguntas.value.map((p) => p.id_pregunta)));
 
-const totalPreguntas = computed(() => preguntas.value.length);
+// INC-18: skip-logic para apoyo económico
+// Si "¿Recibiste apoyo económico?" = "No", ocultar preguntas de seguimiento
+const apoyoEconId = computed(() =>
+    preguntas.value.find(
+        (p) => p.texto?.toLowerCase().includes('recibiste apoyo económico')
+    )?.id_pregunta ?? null
+);
+
+const idsOcultasPorSkip = computed(() => {
+    if (!apoyoEconId.value) return new Set();
+    if (respuestas.value[apoyoEconId.value] !== 'No') return new Set();
+    return new Set(
+        preguntas.value
+            .filter(
+                (p) =>
+                    p.id_pregunta !== apoyoEconId.value &&
+                    p.texto?.toLowerCase().includes('apoyo económico')
+            )
+            .map((p) => p.id_pregunta)
+    );
+});
+
+const preguntasVisibles = computed(() =>
+    preguntas.value.filter((p) => !idsOcultasPorSkip.value.has(p.id_pregunta))
+);
+
+const totalPreguntas = computed(() => preguntasVisibles.value.length);
 
 // Normaliza las opciones de una pregunta.
 // Acepta CUALQUIER forma en que el backend pueda devolverlas:
@@ -73,7 +99,7 @@ const isAnswered = (p) => {
     return r !== null && r !== undefined && r !== '';
 };
 
-const respondidas = computed(() => preguntas.value.filter(isAnswered).length);
+const respondidas = computed(() => preguntasVisibles.value.filter(isAnswered).length);
 
 const pctProgreso = computed(() =>
     totalPreguntas.value ? Math.round((respondidas.value / totalPreguntas.value) * 100) : 0
@@ -81,6 +107,11 @@ const pctProgreso = computed(() =>
 
 const todasRespondidas = computed(() =>
     respondidas.value === totalPreguntas.value && totalPreguntas.value > 0
+);
+
+// El payload excluye las preguntas ocultas por skip-logic
+const preguntasParaEnviar = computed(() =>
+    preguntasVisibles.value.filter((p) => preguntasIds.value.has(p.id_pregunta))
 );
 
 // ─── Carga ────────────────────────────────────────────────────────────────────
@@ -141,8 +172,7 @@ async function enviarRespuestas() {
         // Solo enviar las preguntas visibles (activas). Excluye cualquier ID
         // que el backend haya soft-deleted y que no esté en la vista actual.
         const payload = {
-            respuestas: preguntas.value
-                .filter((p) => preguntasIds.value.has(p.id_pregunta))
+            respuestas: preguntasParaEnviar.value
                 .map((p) => {
                     const val = respuestas.value[p.id_pregunta];
                     if (p.tipo === 'escala') {
@@ -271,7 +301,7 @@ onMounted(cargarEncuesta);
         <!-- Lista de preguntas — una tarjeta por pregunta -->
         <div class="enc-questions">
             <div
-                v-for="(pregunta, idx) in preguntas"
+                v-for="(pregunta, idx) in preguntasVisibles"
                 :key="pregunta.id_pregunta"
                 class="enc-question-card"
                 :class="{ 'enc-card-answered': isAnswered(pregunta) }"

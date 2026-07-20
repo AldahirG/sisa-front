@@ -472,7 +472,7 @@ const progressPct = (row) => {
 
                 <p class="dialog-message">
                     Avanzará el <strong>número de práctica</strong> (+1) a los alumnos que fueron
-                    <strong>liberados</strong> en este período. El cuatrimestre <em>no</em> se modifica aquí.
+                    <strong>liberados</strong> en este período. El semestre <em>no</em> se modifica aquí.
                 </p>
 
                 <div class="avanzar-rules">
@@ -492,7 +492,7 @@ const progressPct = (row) => {
 
                 <div class="dialog-warning-box">
                     <i class="pi pi-info-circle"></i>
-                    <span>Para avanzar el <strong>grado académico (cuatrimestre)</strong> de todos los alumnos, usa el botón en la sección de Alumnos.</span>
+                    <span>Para avanzar el <strong>grado académico (semestre)</strong> de todos los alumnos, usa el botón en la sección de Alumnos.</span>
                 </div>
             </div>
 

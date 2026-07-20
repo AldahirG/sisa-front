@@ -167,6 +167,22 @@ const editarAlumno = (row) => {
 };
 
 const guardarAlumno = async () => {
+    // INC-16: validar correo en modo creación
+    if (!editMode.value) {
+        if (!form.value.nombre?.trim()) {
+            toast.add({ severity: 'warn', summary: 'Campo requerido', detail: 'El nombre es obligatorio', life: 3000 });
+            return;
+        }
+        const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!form.value.correo?.trim() || !emailRe.test(form.value.correo.trim())) {
+            toast.add({ severity: 'warn', summary: 'Correo inválido', detail: 'Ingresa un correo electrónico válido', life: 3000 });
+            return;
+        }
+        if (!form.value.matricula?.trim()) {
+            toast.add({ severity: 'warn', summary: 'Campo requerido', detail: 'La matrícula es obligatoria', life: 3000 });
+            return;
+        }
+    }
     try {
         if (editMode.value) {
             await api.patch(`/alumnos/${form.value.id_alumno}`, {
@@ -315,7 +331,7 @@ const confirmarAvanzarCuatrimestre = async () => {
         toast.add({
             severity: 'error',
             summary: 'Error',
-            detail: e.response?.data?.message || 'No se pudo avanzar el cuatrimestre',
+            detail: e.response?.data?.message || 'No se pudo avanzar el semestre',
             life: 5000
         });
     } finally {
@@ -349,7 +365,7 @@ const estadoSeverity = (estado) => {
             <div class="header-actions">
                 <Button
                     icon="pi pi-arrow-up"
-                    label="Avanzar cuatrimestre"
+                    label="Avanzar semestre"
                     severity="warning"
                     outlined
                     v-tooltip.bottom="'Avanza el grado académico de todos los alumnos activos'"
@@ -431,13 +447,13 @@ const estadoSeverity = (estado) => {
                     </template>
                 </Column>
 
-                <Column header="Cuatrimestre / Práctica" style="width: 170px">
+                <Column header="Semestre / Práctica" style="width: 170px">
                     <template #body="{ data }">
                         <div class="cuatri-practica-cell">
                             <div class="cuatri-row">
                                 <i class="pi pi-book cp-icon"></i>
                                 <span class="cuatri-num">{{ data.cuatrimestre }}°</span>
-                                <span class="cp-lbl">cuatrimestre</span>
+                                <span class="cp-lbl">semestre</span>
                             </div>
                             <div class="practica-row" v-if="data.numero_practica != null">
                                 <i class="pi pi-star cp-icon cp-icon-amber"></i>
@@ -513,7 +529,7 @@ const estadoSeverity = (estado) => {
             </div>
             <div class="form-row">
                 <div class="form-field">
-                    <label>Cuatrimestre</label>
+                    <label>Semestre</label>
                     <InputNumber v-model="form.cuatrimestre" :min="1" :max="12" placeholder="1-12" />
                 </div>
                 <div class="form-field">
@@ -544,7 +560,7 @@ const estadoSeverity = (estado) => {
         <div class="import-header">
             <div>
                 <p class="import-title">Plantilla oficial de carga</p>
-                <p class="import-sub">Se aceptan archivos .csv y .xlsx con las columnas: nombre, correo, password, matricula, carrera, cuatrimestre</p>
+                <p class="import-sub">Se aceptan archivos .csv y .xlsx con las columnas: nombre, correo, password, matricula, carrera, semestre</p>
             </div>
             <Button icon="pi pi-download" label="Descargar plantilla" text severity="secondary" @click="descargarPlantillaExcel" />
         </div>
@@ -586,7 +602,7 @@ const estadoSeverity = (estado) => {
             <Column field="correo" header="Correo" />
             <Column field="matricula" header="Matrícula" />
             <Column field="carrera" header="Carrera" />
-            <Column field="cuatrimestre" header="Cuatrimestre" />
+            <Column field="cuatrimestre" header="Semestre" />
             <Column header="Errores" style="min-width: 200px">
                 <template #body="{ data }">
                     <span v-if="data.errores?.length" class="error-list">{{ data.errores.join(' · ') }}</span>
@@ -620,7 +636,7 @@ const estadoSeverity = (estado) => {
     <Dialog
         v-model:visible="showAvanzarCuatriDialog"
         modal
-        header="Avanzar cuatrimestre"
+        header="Avanzar semestre"
         :style="{ width: '460px' }"
     >
         <div class="avanzar-cuatri-body">
@@ -629,22 +645,22 @@ const estadoSeverity = (estado) => {
             </div>
 
             <p class="ac-description">
-                Esta acción avanzará el <strong>grado académico (cuatrimestre)</strong> de
+                Esta acción avanzará el <strong>grado académico (semestre)</strong> de
                 <strong>todos los alumnos activos y reincorporados</strong> en el sistema.
                 Los alumnos en estado <em>baja</em> no serán afectados.
             </p>
 
             <div class="ac-field">
-                <label class="ac-label">Incremento de cuatrimestres</label>
+                <label class="ac-label">Incremento de semestres</label>
                 <InputNumber
                     v-model="incrementoCuatri"
                     :min="1"
                     :max="3"
                     showButtons
                     class="ac-input"
-                    suffix=" cuatrimestre(s)"
+                    suffix=" semestre(s)"
                 />
-                <small class="ac-hint">Máximo 3 cuatrimestres por operación</small>
+                <small class="ac-hint">Máximo 3 semestres por operación</small>
             </div>
 
             <div class="ac-warning">
@@ -656,7 +672,7 @@ const estadoSeverity = (estado) => {
         <template #footer>
             <Button label="Cancelar" icon="pi pi-times" text @click="showAvanzarCuatriDialog = false" />
             <Button
-                label="Sí, avanzar cuatrimestre"
+                label="Sí, avanzar semestre"
                 icon="pi pi-arrow-up"
                 severity="warning"
                 :loading="loadingAvanzarCuatri"
@@ -671,7 +687,7 @@ const estadoSeverity = (estado) => {
     <Dialog
         v-model:visible="showResultadosCuatriDialog"
         modal
-        header="Resultado: Avanzar cuatrimestre"
+        header="Resultado: Avanzar semestre"
         :style="{ width: '440px' }"
     >
         <div v-if="resultadosCuatri" class="ac-resultado-body">
@@ -686,7 +702,7 @@ const estadoSeverity = (estado) => {
 
             <div class="ac-resultado-incremento">
                 <i class="pi pi-arrow-up"></i>
-                <span>Incremento aplicado: <strong>+{{ resultadosCuatri.incremento }} cuatrimestre(s)</strong></span>
+                <span>Incremento aplicado: <strong>+{{ resultadosCuatri.incremento }} semestre(s)</strong></span>
             </div>
 
             <p class="ac-resultado-mensaje">{{ resultadosCuatri.mensaje }}</p>

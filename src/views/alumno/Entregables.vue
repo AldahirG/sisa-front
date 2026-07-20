@@ -77,23 +77,38 @@ onMounted(async () => {
 });
 
 // =====================
-// HELPERS (sin cambios)
+// HELPERS
 // =====================
 const isExpired = (fecha) => {
     if (!fecha) return false;
     return new Date(fecha) < new Date();
 };
 
+// INC-09: bloquear entrega antes de fecha_inicio
+const isNotStarted = (row) => {
+    if (!row.fecha_inicio) return false;
+    return new Date(row.fecha_inicio) > new Date();
+};
+
+// INC-10: validar URL
+const isValidUrl = (url) => {
+    try {
+        const u = new URL(url.trim());
+        return u.protocol === 'http:' || u.protocol === 'https:';
+    } catch {
+        return false;
+    }
+};
+
 const canUpload = (row) => {
-    // Bloquea si ya fue enviado O evaluado
-    if (row.estado === 'entregado') return false;
-    if (row.estado === 'evaluado')  return false;
-    // Bloquea si la fecha límite pasó
+    if (row.estado === 'evaluado') return false;
     if (isExpired(row.fecha_limite)) return false;
-    return true;
+    if (isNotStarted(row)) return false;
+    return true; // INC-11: permite re-entrega si 'entregado' pero plazo vigente
 };
 
 const estadoLabel = (row) => {
+    if (isNotStarted(row)) return 'Próximo';
     if (isExpired(row.fecha_limite)) return 'Expirado';
     return row.estado;
 };
@@ -115,20 +130,25 @@ const abrirDialogo = (row) => {
 };
 
 const confirmarEnvio = () => {
-    if (!archivoUrl.value) {
-        toast.add({
-            severity: 'warn',
-            summary: 'Validación',
-            detail: 'Debes ingresar un enlace válido'
-        });
+    if (!archivoUrl.value?.trim()) {
+        toast.add({ severity: 'warn', summary: 'Validación', detail: 'Debes ingresar un enlace', life: 3000 });
+        return;
+    }
+    // INC-10: validar formato URL
+    if (!isValidUrl(archivoUrl.value)) {
+        toast.add({ severity: 'warn', summary: 'URL inválida', detail: 'El enlace debe comenzar con https:// o http://', life: 4000 });
         return;
     }
 
+    // INC-11: mensaje diferente si es modificación
+    const esEdicion = selectedEntregable.value?.estado === 'entregado';
     confirm.require({
-        message: '¿Estás seguro de enviar este enlace? No podrás modificarlo después.',
-        header: 'Confirmar entrega',
+        message: esEdicion
+            ? '¿Deseas reemplazar tu entrega anterior con este nuevo enlace?'
+            : '¿Estás seguro de enviar este enlace?',
+        header: esEdicion ? 'Modificar entrega' : 'Confirmar entrega',
         icon: 'pi pi-exclamation-triangle',
-        acceptLabel: 'Sí, enviar',
+        acceptLabel: esEdicion ? 'Sí, reemplazar' : 'Sí, enviar',
         rejectLabel: 'Cancelar',
         accept: enviarEntrega
     });
@@ -181,8 +201,9 @@ const daysLeft = (fechaStr) => {
 
 /** Clase de urgencia según días restantes */
 const urgencyClass = (row) => {
+    if (isNotStarted(row)) return 'urgency-upcoming';
     if (isExpired(row.fecha_limite)) return 'urgency-expired';
-    if (row.estado === 'evaluado' || row.estado === 'entregado') return '';
+    if (row.estado === 'evaluado') return '';
     const days = daysLeft(row.fecha_limite);
     if (days <= 3) return 'urgency-critical';
     if (days <= 7) return 'urgency-warning';
@@ -191,8 +212,14 @@ const urgencyClass = (row) => {
 
 /** Texto de urgencia según días restantes */
 const urgencyText = (row) => {
+    if (isNotStarted(row)) {
+        const d = Math.ceil((new Date(row.fecha_inicio) - new Date()) / (1000 * 60 * 60 * 24));
+        if (d <= 0) return 'Disponible hoy';
+        if (d === 1) return 'Disponible mañana';
+        return `Disponible en ${d} días`;
+    }
     if (isExpired(row.fecha_limite)) return 'Expirado';
-    if (row.estado === 'evaluado' || row.estado === 'entregado') return null;
+    if (row.estado === 'evaluado') return null;
     const days = daysLeft(row.fecha_limite);
     if (days === 0) return '¡Vence hoy!';
     if (days === 1) return 'Vence mañana';
@@ -309,8 +336,15 @@ const progreso = computed(() => {
                     <!-- Nombre -->
                     <h3 class="ent-card-name">{{ ent.nombre }}</h3>
 
-                    <!-- Fecha límite -->
+                    <!-- INC-06/08: Descripción del entregable -->
+                    <p v-if="ent.descripcion" class="ent-card-desc">{{ ent.descripcion }}</p>
+
+                    <!-- Fechas -->
                     <div class="ent-meta">
+                        <span v-if="ent.fecha_inicio" class="meta-item">
+                            <i class="pi pi-calendar-plus meta-icon"></i>
+                            <span>Inicio: <strong>{{ formatDate(ent.fecha_inicio) }}</strong></span>
+                        </span>
                         <span class="meta-item">
                             <i class="pi pi-calendar meta-icon"></i>
                             <span>Fecha límite: <strong>{{ formatDate(ent.fecha_limite) }}</strong></span>
@@ -343,8 +377,17 @@ const progreso = computed(() => {
 
                     <!-- Acciones -->
                     <div class="ent-card-footer">
+                        <!-- INC-11: puede subir o MODIFICAR si plazo vigente -->
                         <Button
-                            v-if="canUpload(ent)"
+                            v-if="canUpload(ent) && ent.estado === 'entregado'"
+                            label="Modificar entrega"
+                            icon="pi pi-pencil"
+                            severity="info"
+                            class="upload-btn"
+                            @click="abrirDialogo(ent)"
+                        />
+                        <Button
+                            v-else-if="canUpload(ent)"
                             label="Subir entregable"
                             icon="pi pi-upload"
                             class="upload-btn"
@@ -355,6 +398,16 @@ const progreso = computed(() => {
                             label="Evaluado"
                             icon="pi pi-check-circle"
                             severity="success"
+                            outlined
+                            disabled
+                            class="upload-btn"
+                        />
+                        <!-- INC-09: no disponible aún -->
+                        <Button
+                            v-else-if="isNotStarted(ent)"
+                            :label="`Disponible el ${formatDate(ent.fecha_inicio)}`"
+                            icon="pi pi-clock"
+                            severity="secondary"
                             outlined
                             disabled
                             class="upload-btn"
@@ -402,6 +455,10 @@ const progreso = computed(() => {
                         <p class="dialog-ent-date">
                             <i class="pi pi-calendar"></i>
                             Fecha límite: {{ formatDate(selectedEntregable?.fecha_limite) }}
+                        </p>
+                        <!-- INC-08: descripción visible al subir -->
+                        <p v-if="selectedEntregable?.descripcion" class="dialog-ent-desc">
+                            {{ selectedEntregable.descripcion }}
                         </p>
                     </div>
                 </div>
@@ -645,6 +702,7 @@ const progreso = computed(() => {
 /* Acento de color según urgencia */
 .urgency-critical { border-top-color: var(--sisa-icon-red); }
 .urgency-warning  { border-top-color: var(--sisa-icon-amber); }
+.urgency-upcoming { border-top-color: var(--sisa-icon-blue); opacity: 0.8; }
 
 /* Cabecera */
 .ent-card-top {
@@ -685,6 +743,14 @@ const progreso = computed(() => {
     color: var(--text-color);
     margin: 0;
     line-height: 1.3;
+}
+
+/* INC-06/08: descripción */
+.ent-card-desc {
+    font-size: 0.8rem;
+    color: var(--text-color-secondary);
+    margin: 0;
+    line-height: 1.45;
 }
 
 /* Meta info */
@@ -849,6 +915,13 @@ const progreso = computed(() => {
     font-size: 0.8rem;
     color: var(--text-color-secondary);
     margin: 0;
+}
+
+.dialog-ent-desc {
+    font-size: 0.8rem;
+    color: var(--text-color-secondary);
+    margin: 0.35rem 0 0;
+    line-height: 1.45;
 }
 
 /* Hint */

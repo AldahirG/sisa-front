@@ -72,7 +72,7 @@
                             <th>Alumno</th>
                             <th>Empresa</th>
                             <th>Categoría</th>
-                            <th>Cuatrimestre</th>
+                            <th>Semestre</th>
                             <th>Promedio</th>
                             <th>Estado</th>
                             <th>Requisitos</th>
@@ -179,7 +179,7 @@
                                 <span class="det-meta-item"><i class="pi pi-building"></i> {{ period.empresa?.nombre ?? '—' }}</span>
                                 <span class="det-meta-item"><i class="pi pi-tag"></i> {{ period.empresa?.categoria ?? '—' }}</span>
                                 <span v-if="period.cuatrimestre" class="det-meta-item">
-                                    <i class="pi pi-graduation-cap"></i> {{ period.cuatrimestre }}° cuatrimestre
+                                    <i class="pi pi-graduation-cap"></i> {{ period.cuatrimestre }}° semestre
                                 </span>
                             </div>
                             <Tag

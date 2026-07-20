@@ -146,6 +146,20 @@ const editEntregable = (row) => {
 // SAVE
 // =======================
 const saveEntregable = async () => {
+    // INC-07: validar campos obligatorios
+    if (!entregableForm.value.nombre?.trim()) {
+        toast.add({ severity: 'warn', summary: 'Campo requerido', detail: 'El nombre del entregable es obligatorio', life: 3000 });
+        return;
+    }
+    if (!entregableForm.value.fecha_inicio) {
+        toast.add({ severity: 'warn', summary: 'Campo requerido', detail: 'La fecha de inicio es obligatoria', life: 3000 });
+        return;
+    }
+    if (!entregableForm.value.fecha_limite) {
+        toast.add({ severity: 'warn', summary: 'Campo requerido', detail: 'La fecha límite es obligatoria', life: 3000 });
+        return;
+    }
+
     try {
         const { fecha_inicio, fecha_limite } = entregableForm.value;
 

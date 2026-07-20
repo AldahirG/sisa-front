@@ -190,7 +190,18 @@ const guardarEvaluacion = async () => {
         await api.post(`/entregables/evaluar/${evaluacionSeleccionada.value.id_entrega}`, form.value);
         toast.add({ severity: 'success', summary: 'Evaluación guardada', life: 3000 });
         dialogVisible.value = false;
-        loadEvaluaciones();
+        // INC-12: actualizar en local en lugar de recargar (que resetea filtros)
+        const idx = evaluaciones.value.findIndex(
+            (e) => e.id_entrega === evaluacionSeleccionada.value.id_entrega
+        );
+        if (idx !== -1) {
+            evaluaciones.value[idx] = {
+                ...evaluaciones.value[idx],
+                calificacion: form.value.calificacion,
+                observaciones: form.value.observaciones,
+                evaluado: true
+            };
+        }
     } catch {
         toast.add({
             severity: 'error',

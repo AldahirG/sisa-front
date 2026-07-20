@@ -1181,7 +1181,7 @@ const defaultEscala = [
                             { label: 'Matrícula', value: 'matricula' },
                             { label: 'Nombre', value: 'nombre' },
                             { label: 'Carrera', value: 'carrera' },
-                            { label: 'Cuatrimestre', value: 'cuatrimestre' },
+                            { label: 'Semestre', value: 'cuatrimestre' },
                             { label: 'Correo', value: 'correo' },
                         ]"
                         option-label="label"
