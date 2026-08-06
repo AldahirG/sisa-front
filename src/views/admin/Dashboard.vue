@@ -6,7 +6,7 @@ import { useRouter } from 'vue-router';
 import Button from 'primevue/button';
 import ProgressBar from 'primevue/progressbar';
 import Toast from 'primevue/toast';
-import { useToast } from 'primevue/usetoast';
+import { useToast } from '@/composables/useAppToast';
 
 const router = useRouter();
 const toast  = useToast();

@@ -70,8 +70,7 @@
                     <thead>
                         <tr>
                             <th>Alumno</th>
-                            <th>Empresa</th>
-                            <th>Categoría</th>
+                            <th>Empresa / Vacante</th>
                             <th>Semestre</th>
                             <th>Promedio</th>
                             <th>Estado</th>
@@ -82,17 +81,21 @@
                     <tbody>
                         <tr v-for="item in filtered" :key="item.id_historial">
                             <td class="td-alumno">
-                                <div class="alumno-name">{{ item.alumno?.nombre ?? '—' }}</div>
-                                <div class="alumno-id">{{ item.alumno?.matricula ?? item.alumno?.numero_control ?? item.alumno?.email ?? '' }}</div>
+                                <div class="alumno-name">{{ item.alumno?.usuario?.nombre ?? '—' }}</div>
+                                <div class="alumno-id">{{ item.alumno?.matricula ?? '' }}</div>
                             </td>
-                            <td>{{ item.empresa?.nombre ?? '—' }}</td>
-                            <td>{{ item.empresa?.categoria ?? '—' }}</td>
+                            <td class="td-empresa">
+                                <div class="empresa-nombre">{{ item.empresa?.nombre ?? '—' }}</div>
+                                <div v-if="item.categoria?.nombre" class="vacante-nombre">
+                                    <i class="pi pi-briefcase"></i> {{ item.categoria.nombre }}
+                                </div>
+                            </td>
                             <td class="td-center">
                                 <span v-if="item.cuatrimestre">{{ item.cuatrimestre }}°</span>
                                 <span v-else class="text-muted">—</span>
                             </td>
                             <td class="td-score">
-                                <span v-if="promedioItem(item) != null" class="score-badge">
+                                <span v-if="promedioItem(item) != null" class="score-badge" :class="promedioClass(item)">
                                     {{ Number(promedioItem(item)).toFixed(2) }}
                                 </span>
                                 <span v-else class="score-none">—</span>
@@ -151,7 +154,7 @@
         <!-- ── Detalle Dialog ───────────────────────────────── -->
         <Dialog
             v-model:visible="detalleVisible"
-            :header="detalleAlumno ? `Detalle — ${detalleAlumno.alumno?.nombre ?? 'Alumno'}` : 'Detalle'"
+            :header="detalleAlumno ? `Detalle — ${detalleAlumno.alumno?.usuario?.nombre ?? 'Alumno'}` : 'Detalle'"
             modal
             :style="{ width: '860px', maxWidth: '98vw' }"
             :closable="true"
@@ -291,7 +294,7 @@ import Tag from 'primevue/tag'
 import Toast from 'primevue/toast'
 import ConfirmDialog from 'primevue/confirmdialog'
 import Dialog from 'primevue/dialog'
-import { useToast } from 'primevue/usetoast'
+import { useToast } from '@/composables/useAppToast'
 import { useConfirm } from 'primevue/useconfirm'
 import api from '@/api/axios'
 
@@ -316,7 +319,7 @@ const filtered = computed(() => {
     const q = searchTerm.value.trim().toLowerCase()
     if (!q) return historial.value
     return historial.value.filter(item => {
-        const nombre  = (item.alumno?.nombre ?? '').toLowerCase()
+        const nombre  = (item.alumno?.usuario?.nombre ?? '').toLowerCase()
         const empresa = (item.empresa?.nombre ?? '').toLowerCase()
         return nombre.includes(q) || empresa.includes(q)
     })
@@ -336,15 +339,21 @@ function entregablesCompletos(item) {
     return item.resumen.pendientes === 0 && item.resumen.evaluados > 0
 }
 
-function canLiberar(item) {
-    return item.encuesta_completada && entregablesCompletos(item)
+function canLiberar(_item) {
+    return true
 }
 
-function liberarTooltip(item) {
-    const faltas = []
-    if (!item.encuesta_completada)      faltas.push('encuesta pendiente')
-    if (!entregablesCompletos(item))    faltas.push('entregables incompletos')
-    return faltas.length ? `No se puede liberar: ${faltas.join(', ')}` : 'Liberar alumno'
+function liberarTooltip(_item) {
+    return 'Liberar alumno'
+}
+
+function promedioClass(item) {
+    const v = promedioItem(item)
+    if (v == null) return ''
+    const n = Number(v)
+    if (n < 7) return 'score--red'
+    if (n === 7) return 'score--amber'
+    return 'score--green'
 }
 
 function formatDate(dateStr) {
@@ -398,7 +407,7 @@ async function verDetalle(item) {
 
 async function liberar(item) {
     confirm.require({
-        message: `¿Liberar a ${item.alumno?.nombre ?? 'este alumno'}? Esta acción es irreversible.`,
+        message: `¿Liberar a ${item.alumno?.usuario?.nombre ?? 'este alumno'}? Esta acción es irreversible.`,
         header: 'Confirmar liberación',
         icon: 'pi pi-unlock',
         acceptLabel: 'Sí, liberar',
@@ -420,7 +429,12 @@ async function liberar(item) {
     })
 }
 
-onMounted(loadPeriodos)
+onMounted(async () => {
+    await loadPeriodos()
+    const activo = periodos.value.find(p => p.estado === 'activo')
+    if (activo) periodoSel.value = activo.id_periodo
+    await loadHistorial()
+})
 </script>
 
 <style scoped>
@@ -510,10 +524,22 @@ onMounted(loadPeriodos)
 
 .td-score { text-align: center; }
 .score-badge {
-    display: inline-block; background: var(--sisa-tint-green); color: var(--sisa-icon-green);
+    display: inline-block;
     font-weight: 700; font-size: .9rem; padding: .2rem .6rem; border-radius: .375rem;
+    background: var(--sisa-tint-green); color: var(--sisa-icon-green);
 }
+.score-badge.score--red   { background: #fee2e2; color: #b91c1c; }
+.score-badge.score--amber { background: #fef3c7; color: #92400e; }
+.score-badge.score--green { background: #dcfce7; color: #15803d; }
 .score-none { color: var(--p-text-muted-color, #94a3b8); }
+
+.td-empresa { min-width: 180px; }
+.empresa-nombre { font-weight: 600; }
+.vacante-nombre {
+    font-size: .78rem; color: var(--p-text-muted-color, #64748b);
+    margin-top: .15rem; display: flex; align-items: center; gap: .3rem;
+}
+.vacante-nombre .pi { font-size: .7rem; }
 
 .td-req { min-width: 160px; }
 .req-list { display: flex; gap: .4rem; flex-wrap: wrap; }

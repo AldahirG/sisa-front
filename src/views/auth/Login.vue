@@ -141,7 +141,7 @@ import InputIcon from 'primevue/inputicon';
 import InputText from 'primevue/inputtext';
 import Password from 'primevue/password';
 import Toast from 'primevue/toast';
-import { useToast } from 'primevue/usetoast';
+import { useToast } from '@/composables/useAppToast';
 
 const correo = ref('');
 const password = ref('');

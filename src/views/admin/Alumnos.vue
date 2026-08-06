@@ -1,7 +1,7 @@
 <script setup>
 import api from '@/api/axios';
 import { useCarreras } from '@/composables/useCarreras';
-import { useToast } from 'primevue/usetoast';
+import { useToast } from '@/composables/useAppToast';
 import { computed, onMounted, ref } from 'vue';
 import * as XLSX from 'xlsx';
 

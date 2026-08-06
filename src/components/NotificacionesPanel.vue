@@ -232,7 +232,8 @@ const handleEliminar = async (id, event) => {
 <style scoped>
 /* ─── PANEL WRAPPER ───────────────────────────────────────── */
 .notif-panel {
-    width: 380px;
+    width: 100%;
+    max-width: 380px;
     max-height: 520px;
     display: flex;
     flex-direction: column;

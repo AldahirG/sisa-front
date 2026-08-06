@@ -1,5 +1,5 @@
 <script setup>
-import { useToast } from 'primevue/usetoast';
+import { useToast } from '@/composables/useAppToast';
 import { ref } from 'vue';
 import { useRouter } from 'vue-router';
 

@@ -1,6 +1,6 @@
 <script setup>
 import api from '@/api/axios';
-import { useToast } from 'primevue/usetoast';
+import { useToast } from '@/composables/useAppToast';
 import { computed, onMounted, ref } from 'vue';
 import * as XLSX from 'xlsx';
 
@@ -578,7 +578,7 @@ const getContactoPrincipal = (empresa) =>
     background: var(--p-content-background);
     border: 1px solid var(--p-content-border-color);
     border-radius: 0.75rem;
-    overflow: hidden;
+    overflow: clip; /* clip preserves border-radius visual but allows child overflow-x: auto to work */
 }
 
 /* ── Cell stacks ─────────────────────────── */

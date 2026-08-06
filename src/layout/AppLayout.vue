@@ -61,7 +61,13 @@ function isOutsideClicked(event) {
         <app-sidebar></app-sidebar>
         <div class="layout-main-container">
             <div class="layout-main">
-                <router-view></router-view>
+                <RouterView v-slot="{ Component, route }">
+                    <Transition name="sisa-page" mode="out-in">
+                        <div :key="route.path" class="sisa-page-root">
+                            <component :is="Component" />
+                        </div>
+                    </Transition>
+                </RouterView>
             </div>
             <app-footer></app-footer>
         </div>

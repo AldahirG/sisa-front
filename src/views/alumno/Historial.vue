@@ -90,12 +90,28 @@
                             </div>
                             <div v-if="item.resumen" class="info-item">
                                 <span class="info-label"><i class="pi pi-star"></i> Promedio final</span>
-                                <span class="info-value info-value--score">
-                                    {{ item.resumen.promedio_final != null
-                                        ? Number(item.resumen.promedio_final).toFixed(2)
-                                        : item.resumen.promedio_calculado != null
-                                            ? Number(item.resumen.promedio_calculado).toFixed(2)
-                                            : '—' }}
+                                <span class="info-value" :class="item.encuesta_completada ? 'info-value--score' : ''">
+                                    <!-- Bloqueado hasta contestar encuestas -->
+                                    <template v-if="!item.encuesta_completada">
+                                        <span class="score-locked">
+                                            <i class="pi pi-lock"></i> Pendiente de encuesta
+                                        </span>
+                                    </template>
+                                    <!-- Reprobado -->
+                                    <template v-else-if="item.resumen.promedio_final != null && Number(item.resumen.promedio_final) < 7 && !item.liberado">
+                                        <span class="score-reprobado">
+                                            {{ Number(item.resumen.promedio_final).toFixed(2) }}
+                                            <i class="pi pi-times-circle"></i>
+                                        </span>
+                                    </template>
+                                    <!-- Normal -->
+                                    <template v-else>
+                                        {{ item.resumen.promedio_final != null
+                                            ? Number(item.resumen.promedio_final).toFixed(2)
+                                            : item.resumen.promedio_calculado != null
+                                                ? Number(item.resumen.promedio_calculado).toFixed(2)
+                                                : '—' }}
+                                    </template>
                                 </span>
                             </div>
                             <div v-if="item.liberado && item.fecha_liberacion" class="info-item">
@@ -199,7 +215,7 @@
 import { ref, onMounted } from 'vue'
 import Tag from 'primevue/tag'
 import Toast from 'primevue/toast'
-import { useToast } from 'primevue/usetoast'
+import { useToast } from '@/composables/useAppToast'
 import api from '@/api/axios'
 
 const toast = useToast()
@@ -392,6 +408,22 @@ onMounted(loadHistorial)
 .info-label .pi { font-size: .75rem; }
 .info-value { font-size: .95rem; color: var(--p-text-color, #1e293b); font-weight: 500; }
 .info-value--score { font-size: 1.2rem; font-weight: 700; color: var(--sisa-icon-green); }
+.score-locked {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.8rem;
+    color: var(--text-color-secondary);
+    font-style: italic;
+}
+.score-reprobado {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: var(--sisa-icon-red);
+}
 
 /* Req chip inline */
 .req-chip {

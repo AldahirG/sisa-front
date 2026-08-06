@@ -24,7 +24,6 @@ const adminMenu = [
             { label: 'Entregables',        icon: 'pi pi-file',            to: '/admin/entregables'      },
             { label: 'Evaluaciones',       icon: 'pi pi-star',            to: '/admin/evaluaciones'     },
             { label: 'Control Académico',  icon: 'pi pi-graduation-cap',  to: '/admin/control-academico'},
-            { label: 'Niveles de Práctica',icon: 'pi pi-list-check',      to: '/admin/niveles-practica' }
         ]
     },
     {
@@ -146,9 +145,12 @@ const navigate = (to) => router.push(to);
 
 <style scoped>
 /* ────────────────────────────────────────
-   Variables vienen de _common.scss y _dark.scss
-   No redefinimos nada localmente para respetar dark mode
+   Keyframes
 ──────────────────────────────────────── */
+@keyframes menuItemIn {
+    from { opacity: 0; transform: translateX(-10px); }
+    to   { opacity: 1; transform: translateX(0); }
+}
 
 /* ────────────────────────────────────────
    Estructura de lista
@@ -162,6 +164,17 @@ const navigate = (to) => router.push(to);
 .layout-root-menuitem {
     margin-bottom: 0.25rem;
 }
+
+/* Stagger entry — grupos */
+.layout-root-menuitem {
+    animation: menuItemIn var(--sisa-dur-slow, 320ms) var(--sisa-ease-out, cubic-bezier(0.16,1,0.3,1)) both;
+}
+.layout-root-menuitem:nth-child(1)  { animation-delay: 0.04s; }
+.layout-root-menuitem:nth-child(2)  { animation-delay: 0.09s; }
+.layout-root-menuitem:nth-child(3)  { animation-delay: 0.13s; }
+.layout-root-menuitem:nth-child(4)  { animation-delay: 0.17s; }
+.layout-root-menuitem:nth-child(5)  { animation-delay: 0.21s; }
+.layout-root-menuitem:nth-child(6)  { animation-delay: 0.25s; }
 
 /* Cabeceras de grupo */
 .layout-menuitem-root-text {
@@ -195,12 +208,26 @@ const navigate = (to) => router.push(to);
     font-weight: 500;
     text-decoration: none;
     position: relative;
-    transition: background 0.15s, color 0.15s;
     outline: none;
+    transition:
+        background  var(--sisa-dur-fast, 120ms) ease,
+        color       var(--sisa-dur-fast, 120ms) ease,
+        transform   var(--sisa-dur-fast, 120ms) var(--sisa-ease-spring, cubic-bezier(0.34,1.56,0.64,1)),
+        padding-left var(--sisa-dur-base, 200ms) ease;
 }
 
 .layout-menu a:hover {
     background: var(--surface-hover);
+    padding-left: 1rem;
+}
+
+.layout-menu a:hover .layout-menuitem-icon {
+    color: var(--sisa-primary-l);
+    transform: scale(1.15);
+}
+
+.layout-menu a:active {
+    transform: scale(0.97);
 }
 
 .layout-menu a:focus-visible {
@@ -214,24 +241,24 @@ const navigate = (to) => router.push(to);
     flex-shrink: 0;
     font-size: 0.9rem;
     color: var(--text-color-secondary);
-    transition: color 0.15s;
+    transition: color var(--sisa-dur-fast, 120ms) ease, transform var(--sisa-dur-fast, 120ms) var(--sisa-ease-spring, cubic-bezier(0.34,1.56,0.64,1));
 }
 
 /* ────────────────────────────────────────
    ACTIVE ROUTE
-   Usa var(--sisa-active-bg) que cambia en dark mode (_dark.scss)
 ──────────────────────────────────────── */
 .layout-menu a.active-route {
     background: var(--sisa-active-bg);
     color: var(--sisa-primary-l);
     font-weight: 600;
+    padding-left: 1rem;
 }
 
 .layout-menu a.active-route .layout-menuitem-icon {
     color: var(--sisa-primary-l);
 }
 
-/* Línea lateral izquierda */
+/* Línea lateral izquierda animada */
 .layout-menu a.active-route::before {
     content: '';
     position: absolute;
@@ -241,9 +268,24 @@ const navigate = (to) => router.push(to);
     width: 3px;
     background: var(--sisa-primary-l);
     border-radius: 0 3px 3px 0;
+    animation: menuItemIn 0.25s var(--sisa-ease-spring, cubic-bezier(0.34,1.56,0.64,1)) both;
 }
 
 .active-indicator {
     display: none;
+}
+
+/* ────────────────────────────────────────
+   Accesibilidad
+──────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+    .layout-root-menuitem,
+    .layout-menu a,
+    .layout-menu a::before,
+    .layout-menuitem-icon {
+        animation: none !important;
+        transition: none !important;
+    }
+    .layout-menu a:hover { padding-left: 0.75rem; }
 }
 </style>

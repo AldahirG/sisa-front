@@ -1,37 +1,45 @@
-<script setup>
+﻿<script setup>
 import api from '@/api/axios';
-import { useToast } from 'primevue/usetoast';
-import { computed, onMounted, ref } from 'vue';
+import { useToast } from '@/composables/useAppToast';
+import { computed, onMounted, ref, watch } from 'vue';
 
-// PrimeVue
-import Badge from 'primevue/badge';
 import Button from 'primevue/button';
 import Column from 'primevue/column';
+import ConfirmDialog from 'primevue/confirmdialog';
 import DataTable from 'primevue/datatable';
 import Dialog from 'primevue/dialog';
 import InputText from 'primevue/inputtext';
 import Select from 'primevue/select';
 import Tag from 'primevue/tag';
 import Textarea from 'primevue/textarea';
+import Toast from 'primevue/toast';
+import { useConfirm } from 'primevue/useconfirm';
 
 const toast = useToast();
+const confirm = useConfirm();
 
-// ==========================
+// ══════════════════════════════════════════════════════════
 // STATE
-// ==========================
-const postulaciones = ref([]);
-const loading = ref(false);
+// ══════════════════════════════════════════════════════════
+const postulaciones           = ref([]);
+const loading                 = ref(false);
+const periodos                = ref([]);
+const periodoSeleccionado     = ref(null);
+const tabEstado               = ref(null);   // null = Todos
 
-const rechazoDialog = ref(false);
-const rechazoMotivo = ref('');
+const rechazoDialog           = ref(false);
+const rechazoMotivo           = ref('');
 const postulacionSeleccionada = ref(null);
 
-// ==========================
-// ACCIONES MASIVAS
-// ==========================
-const showAceptarTodas  = ref(false);
-const showRechazarTodas = ref(false);
-const loadingMasivo     = ref(false);
+const removerDialog           = ref(false);
+const loadingRemover          = ref(false);
+const postulacionARemover     = ref(null);
+
+const showAceptarTodas    = ref(false);
+const showRechazarTodas   = ref(false);
+const loadingMasivo       = ref(false);
+const showResultadoMasivo = ref(false);
+const resultadoMasivo     = ref(null);
 
 const MOTIVOS_PRESET = [
     'No aplicas para este perfil',
@@ -41,32 +49,24 @@ const MOTIVOS_PRESET = [
     'Periodo de selección concluido',
     'Personalizado…'
 ];
+const motivoRechazarTodas = ref(MOTIVOS_PRESET[0]);
+const motivoPersonalizado = ref('');
 
-const motivoRechazarTodas    = ref(MOTIVOS_PRESET[0]);
-const motivoPersonalizado    = ref('');
-const resultadoMasivo        = ref(null);   // { aceptadas?, rechazadas?, omitidas? }
-const showResultadoMasivo    = ref(false);
+const filtros = ref({ empresa: null, search: '' });
 
-// ==========================
-// FILTROS
-// ==========================
-const filtros = ref({
-    estado: null,
-    empresa: null,
-    periodo: null,
-    search: ''
-});
-
-const estadosOpciones = [
-    { label: 'Postulado', value: 'POSTULADO' },
-    { label: 'Aceptado',  value: 'ACEPTADO' },
-    { label: 'Rechazado', value: 'RECHAZADO' },
-    { label: 'Cancelado', value: 'CANCELADO' }
-];
-
-// ==========================
+// ══════════════════════════════════════════════════════════
 // LOAD
-// ==========================
+// ══════════════════════════════════════════════════════════
+const loadPeriodos = async () => {
+    try {
+        const { data } = await api.get('/periodos');
+        periodos.value = data;
+        periodoSeleccionado.value = data.find((p) => p.estado === 'activo') ?? null;
+    } catch {
+        // no blocker
+    }
+};
+
 const loadPostulaciones = async () => {
     loading.value = true;
     try {
@@ -77,70 +77,109 @@ const loadPostulaciones = async () => {
     }
 };
 
-onMounted(loadPostulaciones);
+onMounted(async () => {
+    await Promise.all([loadPeriodos(), loadPostulaciones()]);
+});
 
-// ==========================
-// COMPUTED
-// ==========================
-const empresas = computed(() => {
+// Al cambiar periodo reseteamos tab y filtros secundarios
+watch(periodoSeleccionado, () => {
+    tabEstado.value     = null;
+    filtros.value       = { empresa: null, search: '' };
+});
+
+// ══════════════════════════════════════════════════════════
+// COMPUTED — filtrado progresivo
+// ══════════════════════════════════════════════════════════
+
+// 1. Filtrar por periodo seleccionado
+const postulacionesPeriodo = computed(() => {
+    if (!periodoSeleccionado.value) return postulaciones.value;
+    return postulaciones.value.filter(
+        (p) => p.categoria?.periodo?.id_periodo === periodoSeleccionado.value.id_periodo
+    );
+});
+
+// 2. Empresas disponibles para el periodo
+const empresasPeriodo = computed(() => {
     const map = new Map();
-    postulaciones.value.forEach((p) => {
-        if (p.categoria?.empresa) {
-            map.set(p.categoria.empresa.id_empresa, p.categoria.empresa);
-        }
+    postulacionesPeriodo.value.forEach((p) => {
+        if (p.categoria?.empresa) map.set(p.categoria.empresa.id_empresa, p.categoria.empresa);
     });
     return [...map.values()];
 });
 
-const periodos = computed(() => {
-    const map = new Map();
-    postulaciones.value.forEach((p) => {
-        if (p.categoria?.periodo) {
-            map.set(p.categoria.periodo.id_periodo, p.categoria.periodo);
-        }
-    });
-    return [...map.values()];
-});
+// 3. Stats del periodo (independiente de tab)
+const stats = computed(() => ({
+    postuladas: postulacionesPeriodo.value.filter((p) => p.estado === 'POSTULADO').length,
+    aceptadas:  postulacionesPeriodo.value.filter((p) => p.estado === 'ACEPTADO').length,
+    rechazadas: postulacionesPeriodo.value.filter((p) => p.estado === 'RECHAZADO').length,
+    canceladas: postulacionesPeriodo.value.filter((p) => p.estado === 'CANCELADO').length,
+    total:      postulacionesPeriodo.value.length,
+}));
 
+// 4. Filtrado final: tab + empresa + búsqueda
 const postulacionesFiltradas = computed(() => {
-    return postulaciones.value.filter((p) => {
-        const matchEstado  = !filtros.value.estado  || p.estado === filtros.value.estado;
+    return postulacionesPeriodo.value.filter((p) => {
+        const matchEstado  = !tabEstado.value  || p.estado === tabEstado.value;
         const matchEmpresa = !filtros.value.empresa || p.categoria?.empresa?.id_empresa === filtros.value.empresa.id_empresa;
-        const matchPeriodo = !filtros.value.periodo || p.categoria?.periodo?.id_periodo === filtros.value.periodo.id_periodo;
-        const search = filtros.value.search?.toLowerCase() || '';
+        const search = filtros.value.search?.trim().toLowerCase() || '';
         const matchSearch = !search ||
             p.alumno?.usuario?.nombre?.toLowerCase().includes(search) ||
             p.alumno?.matricula?.toLowerCase().includes(search) ||
-            p.alumno?.usuario?.correo?.toLowerCase().includes(search) ||
             p.categoria?.nombre?.toLowerCase().includes(search);
-        return matchEstado && matchEmpresa && matchPeriodo && matchSearch;
+        return matchEstado && matchEmpresa && matchSearch;
     });
 });
 
-// Stats computed
-const countByEstado = (estado) => postulaciones.value.filter(p => p.estado === estado).length;
-const totalPostuladas  = computed(() => countByEstado('POSTULADO'));
-const totalAceptadas   = computed(() => countByEstado('ACEPTADO'));
-const totalRechazadas  = computed(() => countByEstado('RECHAZADO'));
-const totalCanceladas  = computed(() => countByEstado('CANCELADO'));
+// Detectar filas del mismo alumno para agrupación visual
+const rowsWithGroup = computed(() => {
+    return postulacionesFiltradas.value.map((p, i) => {
+        const prev = postulacionesFiltradas.value[i - 1];
+        const sameAsAbove = prev && prev.alumno?.id_alumno === p.alumno?.id_alumno;
+        return { ...p, _sameAsAbove: sameAsAbove };
+    });
+});
 
-// Date formatter
-const formatDate = (dateStr) => {
-    if (!dateStr) return '—';
-    return new Date(dateStr).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' });
+// ══════════════════════════════════════════════════════════
+// HELPERS
+// ══════════════════════════════════════════════════════════
+const formatDate = (s) => {
+    if (!s) return '—';
+    return new Date(s).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' });
 };
 
-// ==========================
+const estadoSeverity = (estado) => {
+    if (estado === 'ACEPTADO')  return 'success';
+    if (estado === 'RECHAZADO') return 'danger';
+    if (estado === 'POSTULADO') return 'info';
+    return 'secondary';
+};
+
+const setTab = (estado) => {
+    tabEstado.value = tabEstado.value === estado ? null : estado;
+};
+
+// ══════════════════════════════════════════════════════════
 // ACTIONS
-// ==========================
-const aceptar = async (row) => {
-    try {
-        await api.put(`/postulaciones/${row.id_postulacion}/aceptar`);
-        toast.add({ severity: 'success', summary: 'Postulación aceptada', life: 3000 });
-        loadPostulaciones();
-    } catch {
-        toast.add({ severity: 'error', summary: 'Error al aceptar', life: 3000 });
-    }
+// ══════════════════════════════════════════════════════════
+const aceptar = (row) => {
+    confirm.require({
+        message: `¿Aceptar la postulación de ${row.alumno?.nombre ?? 'este alumno'} para "${row.vacante?.nombre ?? 'esta vacante'}"?`,
+        header: 'Confirmar aceptación',
+        icon: 'pi pi-check-circle',
+        acceptLabel: 'Sí, aceptar',
+        rejectLabel: 'Cancelar',
+        acceptClass: 'p-button-success',
+        accept: async () => {
+            try {
+                await api.put(`/postulaciones/${row.id_postulacion}/aceptar`);
+                toast.add({ severity: 'success', summary: 'Postulación aceptada', life: 3000 });
+                loadPostulaciones();
+            } catch {
+                toast.add({ severity: 'error', summary: 'Error al aceptar', life: 3000 });
+            }
+        }
+    });
 };
 
 const abrirRechazo = (row) => {
@@ -162,9 +201,33 @@ const rechazar = async () => {
     }
 };
 
-// ==========================
+const abrirRemover = (row) => {
+    postulacionARemover.value = row;
+    removerDialog.value = true;
+};
+
+const confirmarRemover = async () => {
+    loadingRemover.value = true;
+    try {
+        await api.delete(`/postulaciones/${postulacionARemover.value.id_postulacion}/remover`);
+        removerDialog.value = false;
+        toast.add({ severity: 'warn', summary: 'Alumno removido de empresa', life: 3500 });
+        loadPostulaciones();
+    } catch (err) {
+        toast.add({
+            severity: 'error',
+            summary: 'Error al remover',
+            detail: err.response?.data?.message ?? 'Error inesperado',
+            life: 4000
+        });
+    } finally {
+        loadingRemover.value = false;
+    }
+};
+
+// ══════════════════════════════════════════════════════════
 // ACCIONES MASIVAS
-// ==========================
+// ══════════════════════════════════════════════════════════
 const confirmarAceptarTodas = async () => {
     loadingMasivo.value = true;
     try {
@@ -211,347 +274,279 @@ const confirmarRechazarTodas = async () => {
         loadingMasivo.value = false;
     }
 };
-
-// ==========================
-// UTILS
-// ==========================
-const estadoSeverity = (estado) => {
-    if (estado === 'ACEPTADO')  return 'success';
-    if (estado === 'RECHAZADO') return 'danger';
-    if (estado === 'POSTULADO') return 'info';
-    return 'secondary';
-};
 </script>
 
 <template>
-    <div class="page-container">
-        <!-- PAGE HEADER -->
-        <div class="page-header">
-            <div class="header-left">
-                <div class="header-icon">
+    <div class="ps-page">
+        <Toast />
+        <ConfirmDialog />
+
+        <!-- ══════════════════════════════════════════
+             HEADER
+        ══════════════════════════════════════════ -->
+        <div class="ps-header">
+            <div class="ps-header-left">
+                <div class="ps-page-icon">
                     <i class="pi pi-send"></i>
                 </div>
                 <div>
-                    <h1 class="header-title">
+                    <h1 class="ps-title">
                         Postulaciones
-                        <span class="total-badge">{{ postulaciones.length }}</span>
+                        <span class="ps-total-pill">{{ stats.total }}</span>
                     </h1>
-                    <p class="header-sub">Seguimiento de solicitudes de prácticas profesionales</p>
+                    <p class="ps-subtitle">Solicitudes de prácticas del período seleccionado</p>
                 </div>
             </div>
 
-            <!-- Acciones masivas (solo si hay postulados pendientes) -->
-            <div class="header-bulk-actions" v-if="totalPostuladas > 0">
-                <Button
-                    label="Aceptar todas"
-                    icon="pi pi-check-circle"
-                    severity="success"
-                    outlined
-                    size="small"
-                    v-tooltip.bottom="`Aceptar ${totalPostuladas} postulaciones pendientes del período activo`"
-                    @click="showAceptarTodas = true"
-                />
-                <Button
-                    label="Rechazar todas"
-                    icon="pi pi-times-circle"
-                    severity="danger"
-                    outlined
-                    size="small"
-                    v-tooltip.bottom="`Rechazar ${totalPostuladas} postulaciones pendientes del período activo`"
-                    @click="showRechazarTodas = true"
-                />
-            </div>
-        </div>
+            <div class="ps-header-right">
+                <!-- Acciones masivas -->
+                <div class="ps-bulk-actions" v-if="stats.postuladas > 0">
+                    <Button
+                        label="Aceptar todas"
+                        icon="pi pi-check-circle"
+                        severity="success"
+                        outlined size="small"
+                        v-tooltip.bottom="`Aceptar ${stats.postuladas} pendientes`"
+                        @click="showAceptarTodas = true"
+                    />
+                    <Button
+                        label="Rechazar todas"
+                        icon="pi pi-times-circle"
+                        severity="danger"
+                        outlined size="small"
+                        v-tooltip.bottom="`Rechazar ${stats.postuladas} pendientes`"
+                        @click="showRechazarTodas = true"
+                    />
+                </div>
 
-        <!-- STATS BAR -->
-        <div class="stats-bar">
-            <div class="stat-chip stat-blue">
-                <i class="pi pi-inbox"></i>
-                <span>{{ totalPostuladas }} postuladas</span>
-            </div>
-            <div class="stat-chip stat-green">
-                <i class="pi pi-check-circle"></i>
-                <span>{{ totalAceptadas }} aceptadas</span>
-            </div>
-            <div class="stat-chip stat-red">
-                <i class="pi pi-times-circle"></i>
-                <span>{{ totalRechazadas }} rechazadas</span>
-            </div>
-            <div class="stat-chip stat-muted">
-                <i class="pi pi-ban"></i>
-                <span>{{ totalCanceladas }} canceladas</span>
-            </div>
-        </div>
-
-        <!-- FILTROS -->
-        <div class="filter-card">
-            <div class="filters-grid">
-                <span class="search-wrap">
-                    <i class="pi pi-search search-icon"></i>
-                    <InputText v-model="filtros.search" placeholder="Buscar alumno, matrícula o vacante" class="w-full" />
-                </span>
-
+                <!-- Selector de periodo -->
                 <Select
-                    v-model="filtros.estado"
-                    :options="estadosOpciones"
-                    optionLabel="label"
-                    optionValue="value"
-                    placeholder="Estado"
-                    showClear
-                />
-
-                <Select
-                    v-model="filtros.empresa"
-                    :options="empresas"
-                    optionLabel="nombre"
-                    placeholder="Empresa"
-                    showClear
-                />
-
-                <Select
-                    v-model="filtros.periodo"
+                    v-model="periodoSeleccionado"
                     :options="periodos"
                     optionLabel="nombre"
                     placeholder="Período"
-                    showClear
+                    class="ps-periodo-select"
                 />
             </div>
         </div>
 
-        <!-- TABLA -->
-        <div class="table-card">
+        <!-- ══════════════════════════════════════════
+             STATS CARDS — filtran al hacer click
+        ══════════════════════════════════════════ -->
+        <div class="ps-stats-row">
+            <button
+                class="ps-stat-card ps-stat-card--blue"
+                :class="{ 'ps-stat-card--active': tabEstado === 'POSTULADO' }"
+                @click="setTab('POSTULADO')"
+            >
+                <div class="ps-stat-icon"><i class="pi pi-inbox"></i></div>
+                <div class="ps-stat-body">
+                    <span class="ps-stat-num">{{ stats.postuladas }}</span>
+                    <span class="ps-stat-lbl">Pendientes</span>
+                </div>
+            </button>
+
+            <button
+                class="ps-stat-card ps-stat-card--green"
+                :class="{ 'ps-stat-card--active': tabEstado === 'ACEPTADO' }"
+                @click="setTab('ACEPTADO')"
+            >
+                <div class="ps-stat-icon"><i class="pi pi-check-circle"></i></div>
+                <div class="ps-stat-body">
+                    <span class="ps-stat-num">{{ stats.aceptadas }}</span>
+                    <span class="ps-stat-lbl">Aceptadas</span>
+                </div>
+            </button>
+
+            <button
+                class="ps-stat-card ps-stat-card--red"
+                :class="{ 'ps-stat-card--active': tabEstado === 'RECHAZADO' }"
+                @click="setTab('RECHAZADO')"
+            >
+                <div class="ps-stat-icon"><i class="pi pi-times-circle"></i></div>
+                <div class="ps-stat-body">
+                    <span class="ps-stat-num">{{ stats.rechazadas }}</span>
+                    <span class="ps-stat-lbl">Rechazadas</span>
+                </div>
+            </button>
+
+            <button
+                class="ps-stat-card ps-stat-card--muted"
+                :class="{ 'ps-stat-card--active': tabEstado === null }"
+                @click="setTab(null)"
+            >
+                <div class="ps-stat-icon"><i class="pi pi-list"></i></div>
+                <div class="ps-stat-body">
+                    <span class="ps-stat-num">{{ stats.total }}</span>
+                    <span class="ps-stat-lbl">Todas</span>
+                </div>
+            </button>
+        </div>
+
+        <!-- ══════════════════════════════════════════
+             TAB ACTIVO INDICATOR + FILTROS SECUNDARIOS
+        ══════════════════════════════════════════ -->
+        <div class="ps-filters-bar">
+            <!-- Indicador del filtro activo -->
+            <div class="ps-active-filter">
+                <span v-if="tabEstado === 'POSTULADO'" class="ps-filter-pill ps-filter-pill--blue">
+                    <i class="pi pi-inbox"></i> Mostrando: Pendientes
+                    <button class="ps-filter-clear" @click="tabEstado = null"><i class="pi pi-times"></i></button>
+                </span>
+                <span v-else-if="tabEstado === 'ACEPTADO'" class="ps-filter-pill ps-filter-pill--green">
+                    <i class="pi pi-check-circle"></i> Mostrando: Aceptadas
+                    <button class="ps-filter-clear" @click="tabEstado = null"><i class="pi pi-times"></i></button>
+                </span>
+                <span v-else-if="tabEstado === 'RECHAZADO'" class="ps-filter-pill ps-filter-pill--red">
+                    <i class="pi pi-times-circle"></i> Mostrando: Rechazadas
+                    <button class="ps-filter-clear" @click="tabEstado = null"><i class="pi pi-times"></i></button>
+                </span>
+                <span v-else class="ps-filter-pill ps-filter-pill--muted">
+                    <i class="pi pi-list"></i> Mostrando: Todas
+                </span>
+                <span class="ps-filter-count">{{ postulacionesFiltradas.length }} registros</span>
+            </div>
+
+            <!-- Búsqueda + empresa -->
+            <div class="ps-filters-right">
+                <div class="ps-search-wrap">
+                    <i class="pi pi-search ps-search-icon"></i>
+                    <input
+                        v-model="filtros.search"
+                        type="text"
+                        placeholder="Buscar alumno, matrícula o vacante…"
+                        class="ps-search-input"
+                    />
+                    <button v-if="filtros.search" class="ps-search-clear" @click="filtros.search = ''">
+                        <i class="pi pi-times"></i>
+                    </button>
+                </div>
+                <Select
+                    v-model="filtros.empresa"
+                    :options="empresasPeriodo"
+                    optionLabel="nombre"
+                    placeholder="Empresa"
+                    showClear
+                    class="ps-empresa-select"
+                />
+            </div>
+        </div>
+
+        <!-- ══════════════════════════════════════════
+             TABLA
+        ══════════════════════════════════════════ -->
+        <div class="ps-table-card">
+            <!-- Sin periodo -->
+            <div v-if="!periodoSeleccionado && !loading" class="ps-empty">
+                <i class="pi pi-calendar ps-empty-icon"></i>
+                <p>Selecciona un período para ver las postulaciones</p>
+            </div>
+
+            <!-- Sin resultados -->
+            <div v-else-if="!loading && postulacionesFiltradas.length === 0" class="ps-empty">
+                <i class="pi pi-inbox ps-empty-icon"></i>
+                <p v-if="tabEstado === 'POSTULADO'">No hay postulaciones pendientes en este período</p>
+                <p v-else-if="tabEstado === 'ACEPTADO'">No hay postulaciones aceptadas en este período</p>
+                <p v-else-if="tabEstado === 'RECHAZADO'">No hay postulaciones rechazadas en este período</p>
+                <p v-else>No hay postulaciones en este período</p>
+            </div>
+
             <DataTable
-                :value="postulacionesFiltradas"
+                v-else
+                :value="rowsWithGroup"
                 paginator
-                :rows="10"
+                :rows="15"
                 :loading="loading"
                 responsiveLayout="scroll"
-                :rowsPerPageOptions="[10, 25, 50]"
-                stripedRows
+                :rowsPerPageOptions="[15, 30, 50]"
+                :rowClass="(row) => row._sameAsAbove ? 'row-grouped' : ''"
             >
+                <!-- Alumno -->
                 <Column header="Alumno" style="min-width: 200px">
                     <template #body="{ data }">
-                        <div class="cell-stack">
-                            <span class="cell-main">{{ data.alumno?.usuario?.nombre }}</span>
-                            <span class="cell-sub">{{ data.alumno?.matricula }}</span>
+                        <div v-if="!data._sameAsAbove" class="cell-student">
+                            <div class="cell-avatar">
+                                {{ (data.alumno?.usuario?.nombre || '?')[0].toUpperCase() }}
+                            </div>
+                            <div>
+                                <p class="cell-name">{{ data.alumno?.usuario?.nombre }}</p>
+                                <p class="cell-meta">{{ data.alumno?.matricula }}</p>
+                            </div>
+                        </div>
+                        <div v-else class="cell-student-repeat">
+                            <span class="cell-repeat-dot"></span>
+                            <p class="cell-meta">{{ data.alumno?.matricula }}</p>
                         </div>
                     </template>
                 </Column>
 
-                <Column header="Empresa" style="min-width: 160px">
+                <!-- Empresa -->
+                <Column header="Empresa" style="min-width: 150px">
                     <template #body="{ data }">
-                        <span class="cell-main">{{ data.categoria?.empresa?.nombre ?? '—' }}</span>
+                        <span class="cell-empresa">{{ data.categoria?.empresa?.nombre ?? '—' }}</span>
                     </template>
                 </Column>
 
+                <!-- Vacante -->
                 <Column header="Vacante" style="min-width: 160px">
                     <template #body="{ data }">
-                        <span class="cell-main">{{ data.categoria?.nombre ?? '—' }}</span>
+                        <span class="cell-name" style="font-size:.875rem">{{ data.categoria?.nombre ?? '—' }}</span>
                     </template>
                 </Column>
 
-                <Column header="Período" style="min-width: 120px">
-                    <template #body="{ data }">
-                        <span class="periodo-label">{{ data.categoria?.periodo?.nombre ?? '—' }}</span>
-                    </template>
-                </Column>
-
+                <!-- Estado -->
                 <Column header="Estado" style="width: 130px">
                     <template #body="{ data }">
                         <Tag :value="data.estado" :severity="estadoSeverity(data.estado)" />
                     </template>
                 </Column>
 
-                <Column header="Fecha" style="width: 130px">
+                <!-- Fecha -->
+                <Column header="Fecha" style="width: 120px">
                     <template #body="{ data }">
-                        <span class="cell-sub">{{ formatDate(data.createdAt ?? data.fecha) }}</span>
+                        <span class="cell-meta">{{ formatDate(data.fecha_envio) }}</span>
                     </template>
                 </Column>
 
-                <Column header="Acciones" style="width: 100px">
+                <!-- Acciones -->
+                <Column header="Acciones" style="width: 130px">
                     <template #body="{ data }">
                         <div class="row-actions" v-if="data.estado === 'POSTULADO'">
-                            <Button
-                                icon="pi pi-check"
-                                text
-                                size="small"
-                                severity="success"
-                                v-tooltip.top="'Aceptar postulación'"
+                            <button
+                                class="action-btn action-btn--accept"
+                                v-tooltip.top="'Aceptar'"
                                 @click="aceptar(data)"
-                            />
-                            <Button
-                                icon="pi pi-times"
-                                text
-                                size="small"
-                                severity="danger"
-                                v-tooltip.top="'Rechazar postulación'"
+                            >
+                                <i class="pi pi-check"></i>
+                            </button>
+                            <button
+                                class="action-btn action-btn--reject"
+                                v-tooltip.top="'Rechazar'"
                                 @click="abrirRechazo(data)"
-                            />
+                            >
+                                <i class="pi pi-times"></i>
+                            </button>
                         </div>
-                        <span v-else class="muted-dash">—</span>
+                        <div class="row-actions" v-else-if="data.estado === 'ACEPTADO'">
+                            <button
+                                class="action-btn action-btn--remove"
+                                v-tooltip.top="'Remover de empresa'"
+                                @click="abrirRemover(data)"
+                            >
+                                <i class="pi pi-user-minus"></i>
+                            </button>
+                        </div>
+                        <span v-else class="cell-meta">—</span>
                     </template>
                 </Column>
             </DataTable>
         </div>
     </div>
 
-    <!-- ═══════════════════════════════════════════════════ -->
-    <!-- MODAL ACEPTAR TODAS                               -->
-    <!-- ═══════════════════════════════════════════════════ -->
-    <Dialog v-model:visible="showAceptarTodas" modal style="width: 480px">
-        <template #header>
-            <div class="bulk-dialog-header bulk-header-green">
-                <div class="bulk-header-icon bulk-icon-green">
-                    <i class="pi pi-check-circle"></i>
-                </div>
-                <div>
-                    <div class="bulk-header-title">Aceptar todas las postulaciones</div>
-                    <div class="bulk-header-sub">Período activo</div>
-                </div>
-            </div>
-        </template>
-
-        <div class="bulk-body">
-            <div class="bulk-count-box bulk-count-green">
-                <span class="bulk-count-num">{{ totalPostuladas }}</span>
-                <span class="bulk-count-label">postulaciones en estado <strong>POSTULADO</strong> serán aceptadas</span>
-            </div>
-
-            <div class="bulk-effects">
-                <div class="bulk-effect-item">
-                    <i class="pi pi-check"></i>
-                    <span>Se crea <strong>HistorialAcadémico</strong> por cada alumno</span>
-                </div>
-                <div class="bulk-effect-item">
-                    <i class="pi pi-check"></i>
-                    <span>Se descuenta el cupo de cada vacante</span>
-                </div>
-                <div class="bulk-effect-item">
-                    <i class="pi pi-check"></i>
-                    <span>Cada alumno recibe notificación de aceptación</span>
-                </div>
-            </div>
-
-            <div class="bulk-warning">
-                <i class="pi pi-exclamation-triangle"></i>
-                <span>Esta acción no se puede deshacer. Las demás postulaciones del mismo alumno quedan canceladas automáticamente.</span>
-            </div>
-        </div>
-
-        <template #footer>
-            <div class="dialog-footer">
-                <Button label="Cancelar" text @click="showAceptarTodas = false" :disabled="loadingMasivo" />
-                <Button
-                    label="Confirmar — Aceptar todas"
-                    icon="pi pi-check-circle"
-                    severity="success"
-                    :loading="loadingMasivo"
-                    @click="confirmarAceptarTodas"
-                />
-            </div>
-        </template>
-    </Dialog>
-
-    <!-- ═══════════════════════════════════════════════════ -->
-    <!-- MODAL RECHAZAR TODAS                               -->
-    <!-- ═══════════════════════════════════════════════════ -->
-    <Dialog v-model:visible="showRechazarTodas" modal style="width: 520px">
-        <template #header>
-            <div class="bulk-dialog-header bulk-header-red">
-                <div class="bulk-header-icon bulk-icon-red">
-                    <i class="pi pi-times-circle"></i>
-                </div>
-                <div>
-                    <div class="bulk-header-title">Rechazar todas las postulaciones</div>
-                    <div class="bulk-header-sub">Período activo</div>
-                </div>
-            </div>
-        </template>
-
-        <div class="bulk-body">
-            <div class="bulk-count-box bulk-count-red">
-                <span class="bulk-count-num">{{ totalPostuladas }}</span>
-                <span class="bulk-count-label">postulaciones en estado <strong>POSTULADO</strong> serán rechazadas</span>
-            </div>
-
-            <div class="form-field" style="margin-top:1rem">
-                <label class="field-label-sm">Motivo del rechazo</label>
-                <div class="motivo-chips">
-                    <button
-                        v-for="m in MOTIVOS_PRESET"
-                        :key="m"
-                        class="motivo-chip"
-                        :class="{ 'motivo-chip--active': motivoRechazarTodas === m }"
-                        @click="motivoRechazarTodas = m"
-                    >{{ m }}</button>
-                </div>
-
-                <!-- Campo personalizado -->
-                <Textarea
-                    v-if="motivoRechazarTodas === 'Personalizado…'"
-                    v-model="motivoPersonalizado"
-                    rows="3"
-                    placeholder="Escribe el motivo específico…"
-                    class="w-full"
-                    style="margin-top:0.75rem"
-                />
-
-                <div class="motivo-preview" v-else>
-                    <i class="pi pi-comment"></i>
-                    <span>Se enviará: <em>"{{ motivoRechazarTodas }}"</em></span>
-                </div>
-            </div>
-
-            <div class="bulk-warning" style="margin-top:1rem">
-                <i class="pi pi-exclamation-triangle"></i>
-                <span>Cada alumno recibirá notificación con el motivo indicado. Esta acción no se puede deshacer.</span>
-            </div>
-        </div>
-
-        <template #footer>
-            <div class="dialog-footer">
-                <Button label="Cancelar" text @click="showRechazarTodas = false" :disabled="loadingMasivo" />
-                <Button
-                    label="Confirmar — Rechazar todas"
-                    icon="pi pi-times-circle"
-                    severity="danger"
-                    :loading="loadingMasivo"
-                    @click="confirmarRechazarTodas"
-                />
-            </div>
-        </template>
-    </Dialog>
-
-    <!-- ═══════════════════════════════════════════════════ -->
-    <!-- MODAL RESULTADO MASIVO                             -->
-    <!-- ═══════════════════════════════════════════════════ -->
-    <Dialog v-model:visible="showResultadoMasivo" modal header="Resultado de la operación" style="width: 420px">
-        <div v-if="resultadoMasivo" class="resultado-body">
-            <!-- Aceptadas -->
-            <div v-if="resultadoMasivo.aceptadas != null" class="resultado-stat resultado-green">
-                <span class="resultado-num">{{ resultadoMasivo.aceptadas }}</span>
-                <span class="resultado-label">postulaciones aceptadas</span>
-            </div>
-            <!-- Rechazadas -->
-            <div v-if="resultadoMasivo.rechazadas != null" class="resultado-stat resultado-red">
-                <span class="resultado-num">{{ resultadoMasivo.rechazadas }}</span>
-                <span class="resultado-label">postulaciones rechazadas</span>
-            </div>
-            <!-- Omitidas -->
-            <div v-if="resultadoMasivo.omitidas != null && resultadoMasivo.omitidas > 0" class="resultado-stat resultado-muted">
-                <span class="resultado-num">{{ resultadoMasivo.omitidas }}</span>
-                <span class="resultado-label">omitidas (ya procesadas)</span>
-            </div>
-
-            <p v-if="resultadoMasivo.mensaje" class="resultado-msg">{{ resultadoMasivo.mensaje }}</p>
-        </div>
-        <template #footer>
-            <Button label="Cerrar" @click="showResultadoMasivo = false" />
-        </template>
-    </Dialog>
-
-    <!-- MODAL RECHAZO -->
-    <Dialog v-model:visible="rechazoDialog" modal header="Rechazar postulación" style="width: 500px">
+    <!-- ══════════════════════════════════════════
+         MODAL RECHAZO INDIVIDUAL
+    ══════════════════════════════════════════ -->
+    <Dialog v-model:visible="rechazoDialog" modal header="Rechazar postulación" style="width: 500px; max-width: 95vw">
         <div class="reject-info" v-if="postulacionSeleccionada">
             <div class="reject-row">
                 <span class="reject-label">Alumno</span>
@@ -568,7 +563,7 @@ const estadoSeverity = (estado) => {
         </div>
 
         <div class="form-field">
-            <label>Motivo del rechazo</label>
+            <label class="field-label-sm">Motivo del rechazo</label>
             <Textarea v-model="rechazoMotivo" rows="4" placeholder="Describe el motivo del rechazo..." class="w-full" />
         </div>
 
@@ -579,386 +574,806 @@ const estadoSeverity = (estado) => {
             </div>
         </template>
     </Dialog>
+
+    <!-- ══════════════════════════════════════════
+         MODAL ACEPTAR TODAS
+    ══════════════════════════════════════════ -->
+    <Dialog v-model:visible="showAceptarTodas" modal style="width: 480px; max-width: 95vw">
+        <template #header>
+            <div class="bulk-header bulk-header--green">
+                <div class="bulk-header-icon">
+                    <i class="pi pi-check-circle"></i>
+                </div>
+                <div>
+                    <div class="bulk-header-title">Aceptar todas las postulaciones</div>
+                    <div class="bulk-header-sub">Período activo · {{ stats.postuladas }} pendientes</div>
+                </div>
+            </div>
+        </template>
+
+        <div class="bulk-body">
+            <div class="bulk-count-box bulk-count-box--green">
+                <span class="bulk-count-num">{{ stats.postuladas }}</span>
+                <span class="bulk-count-label">postulaciones en estado <strong>POSTULADO</strong> serán aceptadas</span>
+            </div>
+
+            <div class="bulk-effects">
+                <div class="bulk-effect-item"><i class="pi pi-check"></i><span>Se crea <strong>HistorialAcadémico</strong> por cada alumno</span></div>
+                <div class="bulk-effect-item"><i class="pi pi-check"></i><span>Se descuenta el cupo de cada vacante</span></div>
+                <div class="bulk-effect-item"><i class="pi pi-check"></i><span>Cada alumno recibe notificación de aceptación</span></div>
+            </div>
+
+            <div class="bulk-warning">
+                <i class="pi pi-exclamation-triangle"></i>
+                <span>Esta acción no se puede deshacer. Las demás postulaciones del mismo alumno quedan canceladas automáticamente.</span>
+            </div>
+        </div>
+
+        <template #footer>
+            <div class="dialog-footer">
+                <Button label="Cancelar" text @click="showAceptarTodas = false" :disabled="loadingMasivo" />
+                <Button label="Confirmar — Aceptar todas" icon="pi pi-check-circle" severity="success" :loading="loadingMasivo" @click="confirmarAceptarTodas" />
+            </div>
+        </template>
+    </Dialog>
+
+    <!-- ══════════════════════════════════════════
+         MODAL RECHAZAR TODAS
+    ══════════════════════════════════════════ -->
+    <Dialog v-model:visible="showRechazarTodas" modal style="width: 520px; max-width: 95vw">
+        <template #header>
+            <div class="bulk-header bulk-header--red">
+                <div class="bulk-header-icon">
+                    <i class="pi pi-times-circle"></i>
+                </div>
+                <div>
+                    <div class="bulk-header-title">Rechazar todas las postulaciones</div>
+                    <div class="bulk-header-sub">Período activo · {{ stats.postuladas }} pendientes</div>
+                </div>
+            </div>
+        </template>
+
+        <div class="bulk-body">
+            <div class="bulk-count-box bulk-count-box--red">
+                <span class="bulk-count-num">{{ stats.postuladas }}</span>
+                <span class="bulk-count-label">postulaciones en estado <strong>POSTULADO</strong> serán rechazadas</span>
+            </div>
+
+            <div class="form-field" style="margin-top:.875rem">
+                <label class="field-label-sm">Motivo del rechazo</label>
+                <div class="motivo-chips">
+                    <button
+                        v-for="m in MOTIVOS_PRESET"
+                        :key="m"
+                        class="motivo-chip"
+                        :class="{ 'motivo-chip--active': motivoRechazarTodas === m }"
+                        @click="motivoRechazarTodas = m"
+                    >{{ m }}</button>
+                </div>
+                <Textarea
+                    v-if="motivoRechazarTodas === 'Personalizado…'"
+                    v-model="motivoPersonalizado"
+                    rows="3"
+                    placeholder="Escribe el motivo específico…"
+                    class="w-full"
+                    style="margin-top:.75rem"
+                />
+                <div class="motivo-preview" v-else>
+                    <i class="pi pi-comment"></i>
+                    <span>Se enviará: <em>"{{ motivoRechazarTodas }}"</em></span>
+                </div>
+            </div>
+
+            <div class="bulk-warning" style="margin-top:1rem">
+                <i class="pi pi-exclamation-triangle"></i>
+                <span>Cada alumno recibirá notificación con el motivo indicado. Esta acción no se puede deshacer.</span>
+            </div>
+        </div>
+
+        <template #footer>
+            <div class="dialog-footer">
+                <Button label="Cancelar" text @click="showRechazarTodas = false" :disabled="loadingMasivo" />
+                <Button label="Confirmar — Rechazar todas" icon="pi pi-times-circle" severity="danger" :loading="loadingMasivo" @click="confirmarRechazarTodas" />
+            </div>
+        </template>
+    </Dialog>
+
+    <!-- ══════════════════════════════════════════
+         MODAL REMOVER DE EMPRESA
+    ══════════════════════════════════════════ -->
+    <Dialog v-model:visible="removerDialog" modal style="width: 500px; max-width: 95vw">
+        <template #header>
+            <div class="bulk-header bulk-header--orange">
+                <div class="bulk-header-icon">
+                    <i class="pi pi-user-minus"></i>
+                </div>
+                <div>
+                    <div class="bulk-header-title">Remover de empresa</div>
+                    <div class="bulk-header-sub">Esta acción no se puede deshacer</div>
+                </div>
+            </div>
+        </template>
+
+        <div class="bulk-body" v-if="postulacionARemover">
+            <div class="reject-info" style="background: rgba(230,81,0,.07); border-color: rgba(230,81,0,.25)">
+                <div class="reject-row">
+                    <span class="reject-label">Alumno</span>
+                    <span class="reject-value">{{ postulacionARemover.alumno?.usuario?.nombre }}</span>
+                </div>
+                <div class="reject-row">
+                    <span class="reject-label">Matrícula</span>
+                    <span class="reject-value">{{ postulacionARemover.alumno?.matricula }}</span>
+                </div>
+                <div class="reject-row">
+                    <span class="reject-label">Empresa</span>
+                    <span class="reject-value">{{ postulacionARemover.categoria?.empresa?.nombre }}</span>
+                </div>
+                <div class="reject-row">
+                    <span class="reject-label">Vacante</span>
+                    <span class="reject-value">{{ postulacionARemover.categoria?.nombre }}</span>
+                </div>
+            </div>
+
+            <div class="bulk-effects">
+                <div class="bulk-effect-item"><i class="pi pi-trash" style="color:#e65100"></i><span>Se elimina el <strong>Historial Académico</strong> del alumno en este periodo</span></div>
+                <div class="bulk-effect-item"><i class="pi pi-plus-circle" style="color:#1565c0"></i><span>El cupo de la vacante se <strong>restaura</strong> para otro postulante</span></div>
+                <div class="bulk-effect-item"><i class="pi pi-bell" style="color:#6d4c41"></i><span>El alumno recibe <strong>notificación</strong> de la cancelación</span></div>
+            </div>
+
+            <div class="bulk-warning">
+                <i class="pi pi-exclamation-triangle"></i>
+                <span>El alumno quedará sin empresa asignada. Usa esta opción solo en casos de baja o error de asignación.</span>
+            </div>
+        </div>
+
+        <template #footer>
+            <div class="dialog-footer">
+                <Button label="Cancelar" text @click="removerDialog = false" :disabled="loadingRemover" />
+                <Button label="Confirmar — Remover" icon="pi pi-user-minus" severity="warning" :loading="loadingRemover" @click="confirmarRemover" />
+            </div>
+        </template>
+    </Dialog>
+
+    <!-- ══════════════════════════════════════════
+         MODAL RESULTADO MASIVO
+    ══════════════════════════════════════════ -->
+    <Dialog v-model:visible="showResultadoMasivo" modal header="Resultado de la operación" style="width: 420px; max-width: 95vw">
+        <div v-if="resultadoMasivo" class="resultado-body">
+            <div v-if="resultadoMasivo.aceptadas != null" class="resultado-stat resultado-stat--green">
+                <span class="resultado-num">{{ resultadoMasivo.aceptadas }}</span>
+                <span class="resultado-label">postulaciones aceptadas</span>
+            </div>
+            <div v-if="resultadoMasivo.rechazadas != null" class="resultado-stat resultado-stat--red">
+                <span class="resultado-num">{{ resultadoMasivo.rechazadas }}</span>
+                <span class="resultado-label">postulaciones rechazadas</span>
+            </div>
+            <div v-if="resultadoMasivo.omitidas != null && resultadoMasivo.omitidas > 0" class="resultado-stat resultado-stat--muted">
+                <span class="resultado-num">{{ resultadoMasivo.omitidas }}</span>
+                <span class="resultado-label">omitidas (ya procesadas)</span>
+            </div>
+            <p v-if="resultadoMasivo.mensaje" class="resultado-msg">{{ resultadoMasivo.mensaje }}</p>
+        </div>
+        <template #footer>
+            <Button label="Cerrar" @click="showResultadoMasivo = false" />
+        </template>
+    </Dialog>
 </template>
 
 <style scoped>
-/* ── Layout ─────────────────────────────── */
-.page-container {
+/* ═══════════════════════════════════════
+   BASE
+═══════════════════════════════════════ */
+.ps-page {
     padding: 1.5rem;
     display: flex;
     flex-direction: column;
     gap: 1.25rem;
 }
 
-/* ── Page Header ─────────────────────────── */
-.page-header {
+/* ═══════════════════════════════════════
+   HEADER
+═══════════════════════════════════════ */
+.ps-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
     flex-wrap: wrap;
 }
-.header-left {
+
+.ps-header-left {
     display: flex;
     align-items: center;
-    gap: 1rem;
+    gap: .875rem;
 }
-.header-icon {
-    width: 48px;
-    height: 48px;
-    border-radius: 50%;
-    background: var(--sisa-primary, #0F3C61);
+
+.ps-page-icon {
+    width: 2.75rem;
+    height: 2.75rem;
+    border-radius: .75rem;
+    background: linear-gradient(135deg, var(--sisa-primary) 0%, var(--sisa-primary-l) 100%);
+    color: #fff;
     display: flex;
     align-items: center;
     justify-content: center;
+    font-size: 1.1rem;
     flex-shrink: 0;
+    box-shadow: 0 4px 12px rgba(15, 60, 97, .3);
 }
-.header-icon .pi {
-    color: #fff;
+
+.ps-title {
     font-size: 1.25rem;
-}
-.header-title {
-    font-size: 1.4rem;
     font-weight: 700;
     color: var(--p-text-color);
     margin: 0;
-    line-height: 1.2;
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: .5rem;
 }
-.total-badge {
+
+.ps-total-pill {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 26px;
-    height: 26px;
-    padding: 0 0.5rem;
-    border-radius: 999px;
-    background: var(--sisa-primary, #0F3C61);
+    min-width: 1.6rem;
+    height: 1.6rem;
+    padding: 0 .4rem;
+    border-radius: 99px;
+    background: var(--sisa-primary);
     color: #fff;
-    font-size: 0.78rem;
+    font-size: .75rem;
     font-weight: 700;
 }
-.header-sub {
-    font-size: 0.85rem;
+
+.ps-subtitle {
+    font-size: .82rem;
     color: var(--p-text-muted-color);
-    margin: 0;
+    margin: .15rem 0 0;
 }
 
-/* ── Stats Bar ───────────────────────────── */
-.stats-bar {
+.ps-header-right {
     display: flex;
-    gap: 0.75rem;
+    align-items: center;
+    gap: .625rem;
     flex-wrap: wrap;
 }
-.stat-chip {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    padding: 0.35rem 0.85rem;
-    border-radius: 999px;
-    font-size: 0.82rem;
-    font-weight: 600;
-}
-.stat-blue  { color: var(--sisa-icon-blue);  background: var(--sisa-tint-blue); }
-.stat-green { color: var(--sisa-icon-green); background: var(--sisa-tint-green); }
-.stat-red   { color: var(--sisa-icon-red);   background: var(--sisa-tint-red); }
-.stat-amber { color: var(--sisa-icon-amber); background: var(--sisa-tint-amber); }
-.stat-muted {
-    color: var(--p-text-muted-color);
-    background: var(--p-content-background);
-    border: 1px solid var(--p-content-border-color);
-}
 
-/* ── Filter Card ─────────────────────────── */
-.filter-card {
-    background: var(--p-content-background);
-    border: 1px solid var(--p-content-border-color);
-    border-radius: 0.75rem;
-    padding: 1rem 1.25rem;
-}
-.filters-grid {
+.ps-bulk-actions { display: flex; gap: .4rem; }
+
+.ps-periodo-select { min-width: 200px; }
+
+/* ═══════════════════════════════════════
+   STATS CARDS — clickables
+═══════════════════════════════════════ */
+.ps-stats-row {
     display: grid;
-    grid-template-columns: 1fr 160px 200px 180px;
-    gap: 0.75rem;
-    align-items: center;
-}
-.search-wrap {
-    position: relative;
-    display: flex;
-    align-items: center;
-}
-.search-icon {
-    position: absolute;
-    left: 0.75rem;
-    color: var(--p-text-muted-color);
-    pointer-events: none;
-    z-index: 1;
-}
-.search-wrap :deep(input) {
-    padding-left: 2.25rem;
-    width: 100%;
+    grid-template-columns: repeat(4, 1fr);
+    gap: .875rem;
 }
 
-/* ── Table Card ──────────────────────────── */
-.table-card {
+.ps-stat-card {
+    display: flex;
+    align-items: center;
+    gap: .875rem;
+    padding: 1rem 1.125rem;
+    border: 2px solid var(--p-content-border-color);
+    border-radius: .875rem;
     background: var(--p-content-background);
-    border: 1px solid var(--p-content-border-color);
-    border-radius: 0.75rem;
+    cursor: pointer;
+    text-align: left;
+    font-family: inherit;
+    transition: all .18s;
+    position: relative;
     overflow: hidden;
 }
 
-/* ── Cell stacks ─────────────────────────── */
-.cell-stack {
+.ps-stat-card::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    transition: opacity .18s;
+}
+
+.ps-stat-card:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,.1); }
+
+/* Blue */
+.ps-stat-card--blue .ps-stat-icon { background: var(--sisa-tint-blue);  color: var(--sisa-icon-blue);  }
+.ps-stat-card--blue .ps-stat-num  { color: var(--sisa-icon-blue);  }
+.ps-stat-card--blue.ps-stat-card--active { border-color: var(--sisa-icon-blue);  background: var(--sisa-tint-blue); }
+
+/* Green */
+.ps-stat-card--green .ps-stat-icon { background: var(--sisa-tint-green); color: var(--sisa-icon-green); }
+.ps-stat-card--green .ps-stat-num  { color: var(--sisa-icon-green); }
+.ps-stat-card--green.ps-stat-card--active { border-color: var(--sisa-icon-green); background: var(--sisa-tint-green); }
+
+/* Red */
+.ps-stat-card--red .ps-stat-icon { background: var(--sisa-tint-red);   color: var(--sisa-icon-red);   }
+.ps-stat-card--red .ps-stat-num  { color: var(--sisa-icon-red);   }
+.ps-stat-card--red.ps-stat-card--active { border-color: var(--sisa-icon-red);   background: var(--sisa-tint-red); }
+
+/* Muted (Todos) */
+.ps-stat-card--muted .ps-stat-icon { background: var(--p-content-border-color); color: var(--p-text-muted-color); }
+.ps-stat-card--muted .ps-stat-num  { color: var(--p-text-color); }
+.ps-stat-card--muted.ps-stat-card--active { border-color: var(--sisa-primary-l); background: var(--sisa-tint-blue); }
+
+.ps-stat-icon {
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: .625rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1rem;
+    flex-shrink: 0;
+}
+
+.ps-stat-body {
     display: flex;
     flex-direction: column;
-    gap: 0.15rem;
+    gap: .1rem;
 }
-.cell-main {
+
+.ps-stat-num {
+    font-size: 1.75rem;
+    font-weight: 800;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+}
+
+.ps-stat-lbl {
+    font-size: .72rem;
     font-weight: 600;
-    color: var(--p-text-color);
-    font-size: 0.9rem;
-}
-.cell-sub {
-    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: .04em;
     color: var(--p-text-muted-color);
 }
-.periodo-label {
-    font-size: 0.82rem;
-    color: var(--sisa-icon-amber);
-    background: var(--sisa-tint-amber);
-    padding: 0.2rem 0.55rem;
-    border-radius: 999px;
-    font-weight: 600;
-}
-.row-actions { display: flex; gap: 0.25rem; }
-.muted-dash { color: var(--p-text-muted-color); }
 
-/* ── Reject Dialog ───────────────────────── */
-.reject-info {
-    background: color-mix(in srgb, var(--sisa-tint-red) 50%, transparent);
+/* ═══════════════════════════════════════
+   FILTERS BAR
+═══════════════════════════════════════ */
+.ps-filters-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    background: var(--p-content-background);
     border: 1px solid var(--p-content-border-color);
-    border-radius: 0.5rem;
-    padding: 0.75rem 1rem;
-    margin-bottom: 1rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.4rem;
-}
-.reject-row {
-    display: flex;
-    gap: 0.5rem;
-    align-items: baseline;
-}
-.reject-label {
-    font-size: 0.75rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--p-text-muted-color);
-    min-width: 60px;
-}
-.reject-value {
-    font-size: 0.88rem;
-    font-weight: 600;
-    color: var(--p-text-color);
-}
-.form-field {
-    display: flex;
-    flex-direction: column;
-    gap: 0.4rem;
-    padding-top: 0.25rem;
-}
-.form-field label {
-    font-size: 0.82rem;
-    font-weight: 600;
-    color: var(--p-text-muted-color);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-}
-.dialog-footer {
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.625rem;
+    border-radius: .75rem;
+    padding: .75rem 1rem;
 }
 
-/* ── Header bulk actions ─────────────────── */
-.header-bulk-actions {
+.ps-active-filter {
     display: flex;
-    gap: 0.5rem;
+    align-items: center;
+    gap: .625rem;
     flex-wrap: wrap;
 }
 
-/* ── Bulk Dialog ─────────────────────────── */
-.bulk-dialog-header {
+.ps-filter-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    padding: .25rem .7rem;
+    border-radius: 99px;
+    font-size: .78rem;
+    font-weight: 700;
+}
+
+.ps-filter-pill--blue   { background: var(--sisa-tint-blue);   color: var(--sisa-icon-blue);   }
+.ps-filter-pill--green  { background: var(--sisa-tint-green);  color: var(--sisa-icon-green);  }
+.ps-filter-pill--red    { background: var(--sisa-tint-red);    color: var(--sisa-icon-red);    }
+.ps-filter-pill--muted  { background: var(--p-content-border-color); color: var(--p-text-muted-color); }
+
+.ps-filter-clear {
+    border: none;
+    background: none;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    padding: 0;
+    font-size: .65rem;
+    color: inherit;
+    opacity: .7;
+    transition: opacity .15s;
+    font-family: inherit;
+}
+.ps-filter-clear:hover { opacity: 1; }
+
+.ps-filter-count {
+    font-size: .78rem;
+    color: var(--p-text-muted-color);
+    font-variant-numeric: tabular-nums;
+}
+
+.ps-filters-right {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
+    gap: .625rem;
+    flex-wrap: wrap;
 }
+
+.ps-search-wrap {
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+    border: 1px solid var(--p-content-border-color);
+    border-radius: .5rem;
+    padding: .35rem .75rem;
+    background: var(--p-surface-50, #f8fafc);
+    transition: border-color .15s;
+}
+.ps-search-wrap:focus-within {
+    border-color: var(--sisa-primary-l);
+}
+
+.ps-search-icon { font-size: .8rem; color: var(--p-text-muted-color); flex-shrink: 0; }
+
+.ps-search-input {
+    border: none;
+    outline: none;
+    background: transparent;
+    font-size: .85rem;
+    color: var(--p-text-color);
+    width: 220px;
+    font-family: inherit;
+}
+
+.ps-search-clear {
+    border: none;
+    background: none;
+    cursor: pointer;
+    color: var(--p-text-muted-color);
+    padding: 0;
+    font-size: .72rem;
+    line-height: 1;
+    font-family: inherit;
+}
+.ps-search-clear:hover { color: var(--sisa-icon-red); }
+
+.ps-empresa-select { min-width: 170px; }
+
+/* ═══════════════════════════════════════
+   TABLE CARD
+═══════════════════════════════════════ */
+.ps-table-card {
+    background: var(--p-content-background);
+    border: 1px solid var(--p-content-border-color);
+    border-radius: .875rem;
+    overflow: clip;
+}
+
+.ps-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: .875rem;
+    padding: 4rem 2rem;
+    font-size: .9rem;
+    color: var(--p-text-muted-color);
+}
+.ps-empty-icon { font-size: 2.25rem; opacity: .2; }
+
+/* Fila agrupada — mismo alumno que la de arriba */
+:deep(.row-grouped td:first-child) {
+    border-top: none !important;
+}
+:deep(.row-grouped) {
+    background: color-mix(in srgb, var(--p-content-background) 95%, var(--sisa-tint-blue)) !important;
+}
+
+/* Cells */
+.cell-student {
+    display: flex;
+    align-items: center;
+    gap: .625rem;
+}
+
+.cell-student-repeat {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    padding-left: .25rem;
+}
+
+.cell-repeat-dot {
+    width: .35rem;
+    height: .35rem;
+    border-radius: 50%;
+    background: var(--p-content-border-color);
+    flex-shrink: 0;
+}
+
+.cell-avatar {
+    width: 2rem;
+    height: 2rem;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--sisa-primary) 0%, var(--sisa-primary-l) 100%);
+    color: #fff;
+    font-size: .75rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.cell-name {
+    margin: 0;
+    font-size: .875rem;
+    font-weight: 600;
+    color: var(--p-text-color);
+}
+
+.cell-meta {
+    margin: .1rem 0 0;
+    font-size: .75rem;
+    color: var(--p-text-muted-color);
+}
+
+.cell-empresa {
+    font-size: .84rem;
+    font-weight: 600;
+    color: var(--p-text-color);
+}
+
+/* Action buttons */
+.row-actions { display: flex; gap: .3rem; }
+
+.action-btn {
+    width: 2rem;
+    height: 2rem;
+    border-radius: .45rem;
+    border: 1px solid transparent;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: .8rem;
+    transition: all .15s;
+    font-family: inherit;
+}
+
+.action-btn--accept {
+    background: var(--sisa-tint-green);
+    color: var(--sisa-icon-green);
+    border-color: var(--sisa-tint-green);
+}
+.action-btn--accept:hover {
+    background: var(--sisa-icon-green);
+    color: #fff;
+    border-color: var(--sisa-icon-green);
+}
+
+.action-btn--reject {
+    background: var(--sisa-tint-red);
+    color: var(--sisa-icon-red);
+    border-color: var(--sisa-tint-red);
+}
+.action-btn--reject:hover {
+    background: var(--sisa-icon-red);
+    color: #fff;
+    border-color: var(--sisa-icon-red);
+}
+
+.action-btn--remove {
+    background: rgba(230,81,0,.1);
+    color: #e65100;
+    border-color: rgba(230,81,0,.2);
+}
+.action-btn--remove:hover {
+    background: #e65100;
+    color: #fff;
+    border-color: #e65100;
+}
+
+/* ═══════════════════════════════════════
+   REJECT DIALOG
+═══════════════════════════════════════ */
+.reject-info {
+    background: var(--sisa-tint-red);
+    border: 1px solid var(--p-content-border-color);
+    border-radius: .5rem;
+    padding: .75rem 1rem;
+    margin-bottom: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: .4rem;
+}
+
+.reject-row { display: flex; gap: .5rem; align-items: baseline; }
+
+.reject-label {
+    font-size: .72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    color: var(--p-text-muted-color);
+    min-width: 60px;
+}
+
+.reject-value {
+    font-size: .875rem;
+    font-weight: 600;
+    color: var(--p-text-color);
+}
+
+.form-field { display: flex; flex-direction: column; gap: .4rem; padding-top: .25rem; }
+
+.field-label-sm {
+    font-size: .72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    color: var(--p-text-muted-color);
+    display: block;
+    margin-bottom: .25rem;
+}
+
+.dialog-footer { display: flex; justify-content: flex-end; gap: .625rem; }
+
+/* ═══════════════════════════════════════
+   BULK DIALOGS
+═══════════════════════════════════════ */
+.bulk-header {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+}
+
 .bulk-header-icon {
-    width: 40px;
-    height: 40px;
+    width: 2.5rem;
+    height: 2.5rem;
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 1.2rem;
+    font-size: 1.1rem;
     flex-shrink: 0;
 }
-.bulk-icon-green { background: rgba(46,125,50,.12); color: #2e7d32; }
-.bulk-icon-red   { background: rgba(198,40,40,.12); color: #c62828; }
+
+.bulk-header--green  .bulk-header-icon { background: rgba(46,125,50,.12);  color: #2e7d32; }
+.bulk-header--red    .bulk-header-icon { background: rgba(198,40,40,.12);  color: #c62828; }
+.bulk-header--orange .bulk-header-icon { background: rgba(230,81,0,.12);   color: #e65100; }
 
 .bulk-header-title { font-size: 1rem; font-weight: 700; color: var(--p-text-color); }
-.bulk-header-sub   { font-size: 0.78rem; color: var(--p-text-muted-color); }
+.bulk-header-sub   { font-size: .78rem; color: var(--p-text-muted-color); }
 
-.bulk-body { display: flex; flex-direction: column; gap: 0.85rem; padding-top: 0.25rem; }
+.bulk-body { display: flex; flex-direction: column; gap: .85rem; padding-top: .25rem; }
 
 .bulk-count-box {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    padding: 0.75rem 1rem;
-    border-radius: 10px;
-    font-size: 0.88rem;
+    gap: .75rem;
+    padding: .75rem 1rem;
+    border-radius: .625rem;
+    font-size: .875rem;
 }
-.bulk-count-green { background: rgba(46,125,50,.1); border: 1px solid rgba(46,125,50,.25); }
-.bulk-count-red   { background: rgba(198,40,40,.1); border: 1px solid rgba(198,40,40,.25); }
+.bulk-count-box--green { background: rgba(46,125,50,.08); border: 1px solid rgba(46,125,50,.25); }
+.bulk-count-box--red   { background: rgba(198,40,40,.08); border: 1px solid rgba(198,40,40,.25); }
 
 .bulk-count-num {
     font-size: 2rem;
     font-weight: 800;
     line-height: 1;
     flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
 }
-.bulk-count-green .bulk-count-num { color: #2e7d32; }
-.bulk-count-red   .bulk-count-num { color: #c62828; }
+.bulk-count-box--green .bulk-count-num { color: #2e7d32; }
+.bulk-count-box--red   .bulk-count-num { color: #c62828; }
 
 .bulk-count-label { color: var(--p-text-color); line-height: 1.4; }
 
 .bulk-effects {
     display: flex;
     flex-direction: column;
-    gap: 0.4rem;
-    padding: 0.75rem 1rem;
-    background: var(--p-surface-50, rgba(0,0,0,.025));
-    border-radius: 8px;
+    gap: .375rem;
+    padding: .75rem 1rem;
+    background: var(--p-surface-50, rgba(0,0,0,.02));
+    border-radius: .5rem;
     border: 1px solid var(--p-content-border-color);
 }
-.bulk-effect-item {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.5rem;
-    font-size: 0.85rem;
-    color: var(--p-text-color);
-}
-.bulk-effect-item .pi {
-    color: #2e7d32;
-    font-size: 0.8rem;
-    margin-top: 2px;
-    flex-shrink: 0;
-}
+
+.bulk-effect-item { display: flex; align-items: flex-start; gap: .5rem; font-size: .85rem; color: var(--p-text-color); }
+.bulk-effect-item .pi { color: #2e7d32; font-size: .8rem; margin-top: 2px; flex-shrink: 0; }
 
 .bulk-warning {
     display: flex;
     align-items: flex-start;
-    gap: 0.5rem;
-    padding: 0.65rem 0.85rem;
-    border-radius: 8px;
+    gap: .5rem;
+    padding: .65rem .875rem;
+    border-radius: .5rem;
     background: rgba(230,81,0,.08);
     border: 1px solid rgba(230,81,0,.25);
-    font-size: 0.82rem;
+    font-size: .82rem;
     color: #bf360c;
     line-height: 1.45;
 }
 .bulk-warning .pi { flex-shrink: 0; margin-top: 1px; }
 
-/* Motivo chips */
-.field-label-sm {
-    font-size: 0.78rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--p-text-muted-color);
-    margin-bottom: 0.5rem;
-    display: block;
-}
-.motivo-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.4rem;
-}
+.motivo-chips { display: flex; flex-wrap: wrap; gap: .375rem; }
+
 .motivo-chip {
-    padding: 0.3rem 0.7rem;
-    border-radius: 999px;
+    padding: .3rem .7rem;
+    border-radius: 99px;
     border: 1px solid var(--p-content-border-color);
     background: var(--p-content-background);
     color: var(--p-text-color);
-    font-size: 0.8rem;
+    font-size: .78rem;
     cursor: pointer;
-    transition: all 0.15s;
+    transition: all .15s;
+    font-family: inherit;
 }
-.motivo-chip:hover {
-    border-color: var(--sisa-primary-l, #1565C0);
-    color: var(--sisa-primary-l, #1565C0);
-}
-.motivo-chip--active {
-    background: rgba(198,40,40,.1);
-    border-color: #c62828;
-    color: #c62828;
-    font-weight: 600;
-}
+.motivo-chip:hover { border-color: var(--sisa-primary-l); color: var(--sisa-primary-l); }
+.motivo-chip--active { background: rgba(198,40,40,.08); border-color: #c62828; color: #c62828; font-weight: 600; }
+
 .motivo-preview {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    margin-top: 0.6rem;
-    padding: 0.5rem 0.75rem;
-    border-radius: 8px;
-    background: var(--p-surface-50, rgba(0,0,0,.025));
+    gap: .5rem;
+    margin-top: .625rem;
+    padding: .5rem .75rem;
+    border-radius: .5rem;
+    background: var(--p-surface-50, rgba(0,0,0,.02));
     border: 1px solid var(--p-content-border-color);
-    font-size: 0.82rem;
+    font-size: .82rem;
     color: var(--p-text-muted-color);
 }
-.motivo-preview em { font-style: normal; color: var(--p-text-color); font-weight: 500; }
+.motivo-preview em  { font-style: normal; color: var(--p-text-color); font-weight: 500; }
 .motivo-preview .pi { flex-shrink: 0; }
 
-/* ── Resultado masivo ────────────────────── */
-.resultado-body {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-    padding: 0.5rem 0;
-}
+/* ═══════════════════════════════════════
+   RESULTADO MASIVO
+═══════════════════════════════════════ */
+.resultado-body { display: flex; flex-direction: column; gap: .75rem; padding: .5rem 0; }
+
 .resultado-stat {
     display: flex;
     align-items: center;
     gap: 1rem;
-    padding: 0.75rem 1rem;
-    border-radius: 10px;
+    padding: .75rem 1rem;
+    border-radius: .625rem;
 }
-.resultado-green { background: rgba(46,125,50,.1); border: 1px solid rgba(46,125,50,.25); }
-.resultado-red   { background: rgba(198,40,40,.1); border: 1px solid rgba(198,40,40,.25); }
-.resultado-muted { background: var(--p-surface-50); border: 1px solid var(--p-content-border-color); }
+.resultado-stat--green { background: rgba(46,125,50,.08); border: 1px solid rgba(46,125,50,.25); }
+.resultado-stat--red   { background: rgba(198,40,40,.08); border: 1px solid rgba(198,40,40,.25); }
+.resultado-stat--muted { background: var(--p-surface-50); border: 1px solid var(--p-content-border-color); }
 
-.resultado-num {
-    font-size: 2.2rem;
-    font-weight: 800;
-    line-height: 1;
+.resultado-num { font-size: 2.2rem; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+.resultado-stat--green .resultado-num { color: #2e7d32; }
+.resultado-stat--red   .resultado-num { color: #c62828; }
+.resultado-stat--muted .resultado-num { color: var(--p-text-muted-color); }
+
+.resultado-label { font-size: .9rem; color: var(--p-text-color); }
+.resultado-msg   { font-size: .85rem; color: var(--p-text-muted-color); margin: 0; }
+
+/* ═══════════════════════════════════════
+   RESPONSIVE
+═══════════════════════════════════════ */
+@media (max-width: 960px) {
+    .ps-stats-row { grid-template-columns: repeat(2, 1fr); }
 }
-.resultado-green .resultado-num { color: #2e7d32; }
-.resultado-red   .resultado-num { color: #c62828; }
-.resultado-muted .resultado-num { color: var(--p-text-muted-color); }
 
-.resultado-label { font-size: 0.9rem; color: var(--p-text-color); }
-.resultado-msg   { font-size: 0.85rem; color: var(--p-text-muted-color); margin: 0; }
-
-/* ── Responsive ──────────────────────────── */
-@media (max-width: 1024px) {
-    .filters-grid { grid-template-columns: 1fr 1fr; }
+@media (max-width: 768px) {
+    .ps-filters-bar { flex-direction: column; align-items: flex-start; }
+    .ps-filters-right { width: 100%; }
+    .ps-search-input { width: 100%; }
+    .ps-search-wrap { flex: 1; }
+    .ps-empresa-select { flex: 1; }
 }
+
 @media (max-width: 640px) {
-    .filters-grid { grid-template-columns: 1fr; }
-    .page-header  { flex-direction: column; align-items: flex-start; }
+    .ps-page { padding: 1rem; gap: 1rem; }
+    .ps-header { flex-direction: column; align-items: flex-start; }
+    .ps-header-right { width: 100%; }
+    .ps-periodo-select { flex: 1; }
+    .ps-stats-row { grid-template-columns: repeat(2, 1fr); }
+    .ps-bulk-actions { width: 100%; }
+    .ps-bulk-actions .p-button { flex: 1; justify-content: center; }
+}
+
+@media (max-width: 400px) {
+    .ps-stats-row { grid-template-columns: 1fr 1fr; }
+    .ps-stat-num  { font-size: 1.4rem; }
 }
 </style>

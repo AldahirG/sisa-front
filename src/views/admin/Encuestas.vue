@@ -3,6 +3,8 @@ import api from '@/api/axios';
 import { computed, onMounted, ref, watch } from 'vue';
 
 import Button from 'primevue/button';
+import Checkbox from 'primevue/checkbox';
+import ConfirmDialog from 'primevue/confirmdialog';
 import Dialog from 'primevue/dialog';
 import InputNumber from 'primevue/inputnumber';
 import InputText from 'primevue/inputtext';
@@ -11,9 +13,11 @@ import Select from 'primevue/select';
 import Tag from 'primevue/tag';
 import Textarea from 'primevue/textarea';
 import Toast from 'primevue/toast';
-import { useToast } from 'primevue/usetoast';
+import { useConfirm } from 'primevue/useconfirm';
+import { useToast } from '@/composables/useAppToast';
 
 const toast = useToast();
+const confirm = useConfirm();
 
 // ════════════════════════════════
 // CONSTANTS
@@ -63,20 +67,25 @@ const loadingPlantilla = ref(false);
 const encuestas        = ref([]);
 const selected         = ref(null);
 const periodos         = ref([]);
+const filtroPeriodoList = ref(null);  // null = mostrar todas
 
 // Dialogs
-const showCreateDialog    = ref(false);
-const showAddPregDialog   = ref(false);
-const showEditPregDialog  = ref(false);
-const showDuplicateDialog = ref(false);
-const showDeleteDialog    = ref(false);
-const showPlantillaDialog = ref(false);
+const showCreateDialog      = ref(false);
+const showEditEncDialog     = ref(false);
+const showAddPregDialog     = ref(false);
+const showEditPregDialog    = ref(false);
+const showDuplicateDialog   = ref(false);
+const showDeleteDialog      = ref(false);
+const showPlantillaDialog   = ref(false);
+
+// Edit encuesta form
+const editEncForm = ref({ nombre: '', descripcion: '', tiene_calificacion: false, id_periodo: null });
 
 // Forms
-const newEncuesta  = ref({ nombre: '', descripcion: '', id_periodo: null });
-const newPregunta  = ref({ texto: '', tipo: 'texto_corto', campo_auto: '' });
+const newEncuesta  = ref({ nombre: '', descripcion: '', id_periodo: null, tiene_calificacion: false });
+const newPregunta  = ref({ texto: '', tipo: 'texto_corto', campo_auto: '', requerida: true, condicion_pregunta_id: null, condicion_respuesta: '' });
 const newOpciones  = ref(['']);
-const editPregunta = ref({ id_pregunta: null, texto: '', orden: 0, peso: 1 });
+const editPregunta = ref({ id_pregunta: null, texto: '', orden: 0, peso: 1, requerida: true, condicion_pregunta_id: null, condicion_respuesta: '' });
 const dupForm      = ref({ nombre: '', id_periodo_destino: null });
 
 const saving = ref(false);
@@ -336,8 +345,14 @@ const loadEncuestas = async () => {
         const { data } = await api.get('/encuestas');
         encuestas.value = data ?? [];
 
+        // Init period filter to active period on first load
+        const encPeriodoActivo = encuestas.value.find((e) => e.periodo?.estado === 'activo');
+        if (filtroPeriodoList.value === null && encPeriodoActivo) {
+            filtroPeriodoList.value = encPeriodoActivo.periodo.id_periodo;
+        }
+
         if (!selected.value) {
-            const autoSelect = encuestas.value.find((e) => e.activa) ?? encuestas.value[0] ?? null;
+            const autoSelect = encPeriodoActivo ?? encuestas.value.find((e) => e.activa) ?? encuestas.value[0] ?? null;
             if (autoSelect) {
                 await selectEncuesta(autoSelect);
             }
@@ -376,6 +391,7 @@ const selectEncuesta = async (enc) => {
     activeTab.value        = 'preguntas';
     respRespondieron.value = [];
     respPendientes.value   = [];
+    respTotales.value      = { total_asignados: 0, total_respondieron: 0, total_pendientes: 0 };
     expandedResp.value     = null;
     respFilter.value       = 'todos';
     respSearch.value       = '';
@@ -389,11 +405,50 @@ onMounted(async () => {
 // ════════════════════════════════
 // COMPUTED
 // ════════════════════════════════
-const encuestaActiva = computed(() => encuestas.value.find((e) => e.activa) ?? null);
+// Warning si ninguna encuesta está visible para alumnos (activa=true)
+const encuestaActiva = computed(() =>
+    encuestas.value.find((e) => e.activa) ?? null
+);
+
+// Períodos que ya tienen encuesta asignada (para el filtro de lista)
+const periodosConEncuesta = computed(() => {
+    // Coerce to Number to prevent string/number type mismatch from JSON deserialization
+    const ids = new Set(encuestas.value.map((e) => Number(e.periodo?.id_periodo)).filter(Boolean));
+    return periodos.value
+        .filter((p) => ids.has(Number(p.id_periodo)))
+        .sort((a, b) => {
+            if (a.estado === 'activo' && b.estado !== 'activo') return -1;
+            if (b.estado === 'activo' && a.estado !== 'activo') return 1;
+            return 0;
+        });
+});
+
+// Todos los periodos son seleccionables (múltiples encuestas por periodo permitidas)
+const periodosDisponibles = computed(() => periodos.value);
+
+// Lista filtrada por período seleccionado
+const encuestasFiltradas = computed(() => {
+    if (!filtroPeriodoList.value) return encuestas.value;
+    return encuestas.value.filter((e) => e.periodo?.id_periodo === filtroPeriodoList.value);
+});
+
+// Encuestas del periodo actualmente visible (para sub-tabs)
+const encuestasPeriodoActual = computed(() => encuestasFiltradas.value);
 
 // ════════════════════════════════
 // ENCUESTA — CRUD
 // ════════════════════════════════
+const openCreateDialog = () => {
+    const activoPeriodo = periodos.value.find((p) => p.estado === 'activo');
+    newEncuesta.value = {
+        nombre: '',
+        descripcion: '',
+        id_periodo: activoPeriodo?.id_periodo ?? periodos.value[0]?.id_periodo ?? null,
+        tiene_calificacion: false,
+    };
+    showCreateDialog.value = true;
+};
+
 const crearEncuesta = async () => {
     if (!newEncuesta.value.nombre.trim()) {
         toast.add({ severity: 'warn', summary: 'Campo requerido', detail: 'Escribe un nombre para la encuesta.', life: 3000 });
@@ -404,19 +459,68 @@ const crearEncuesta = async () => {
         return;
     }
     saving.value = true;
+    const periodoId = newEncuesta.value.id_periodo;
     try {
-        await api.post('/encuestas', {
-            id_periodo:  newEncuesta.value.id_periodo,
-            nombre:      newEncuesta.value.nombre.trim(),
-            descripcion: newEncuesta.value.descripcion.trim() || undefined,
-            activa:      false
+        const { data: creada } = await api.post('/encuestas', {
+            id_periodo:         periodoId,
+            nombre:             newEncuesta.value.nombre.trim(),
+            descripcion:        newEncuesta.value.descripcion?.trim() || undefined,
+            activa:             false,
+            tiene_calificacion: newEncuesta.value.tiene_calificacion ?? false,
         });
         toast.add({ severity: 'success', summary: 'Encuesta creada', life: 3000 });
         showCreateDialog.value = false;
-        newEncuesta.value = { nombre: '', descripcion: '', id_periodo: null };
+        newEncuesta.value = { nombre: '', descripcion: '', id_periodo: null, tiene_calificacion: false };
+        // Fijar el filtro al periodo de la nueva encuesta ANTES de recargar
+        filtroPeriodoList.value = periodoId;
         await loadEncuestas();
+        // Seleccionar la encuesta recién creada
+        const recienCreada = encuestas.value.find((e) => e.id_encuesta === creada?.id_encuesta);
+        if (recienCreada) await selectEncuesta(recienCreada);
     } catch (e) {
         toast.add({ severity: 'error', summary: 'Error', detail: e.response?.data?.message || 'No se pudo crear la encuesta.', life: 4000 });
+    } finally {
+        saving.value = false;
+    }
+};
+
+// ════════════════════════════════
+// EDITAR ENCUESTA
+// ════════════════════════════════
+const abrirEditarEncuesta = (enc) => {
+    editEncForm.value = {
+        nombre:             enc.nombre ?? '',
+        descripcion:        enc.descripcion ?? '',
+        tiene_calificacion: enc.tiene_calificacion ?? false,
+        id_periodo:         enc.periodo?.id_periodo ?? null,
+    };
+    showEditEncDialog.value = true;
+};
+
+const guardarEditarEncuesta = async () => {
+    if (!editEncForm.value.nombre.trim()) {
+        toast.add({ severity: 'warn', summary: 'Campo requerido', detail: 'El nombre no puede estar vacío.', life: 3000 });
+        return;
+    }
+    if (!editEncForm.value.id_periodo) {
+        toast.add({ severity: 'warn', summary: 'Campo requerido', detail: 'Selecciona el periodo.', life: 3000 });
+        return;
+    }
+    saving.value = true;
+    const periodoId = editEncForm.value.id_periodo;
+    try {
+        await api.patch(`/encuestas/${selected.value.id_encuesta}`, {
+            nombre:             editEncForm.value.nombre.trim(),
+            descripcion:        editEncForm.value.descripcion?.trim() || undefined,
+            tiene_calificacion: editEncForm.value.tiene_calificacion,
+            id_periodo:         periodoId,
+        });
+        toast.add({ severity: 'success', summary: 'Encuesta actualizada', life: 3000 });
+        showEditEncDialog.value = false;
+        filtroPeriodoList.value = periodoId;
+        await loadEncuestas();
+    } catch (e) {
+        toast.add({ severity: 'error', summary: 'Error', detail: e.response?.data?.message || 'No se pudo actualizar.', life: 4000 });
     } finally {
         saving.value = false;
     }
@@ -473,7 +577,8 @@ const agregarPregunta = async () => {
             texto: newPregunta.value.texto.trim(),
             tipo:  newPregunta.value.tipo,
             orden,
-            peso: 1
+            peso: 1,
+            requerida: newPregunta.value.requerida ?? true,
         };
         if (newPregunta.value.tipo === 'opcion_unica' || newPregunta.value.tipo === 'opcion_multiple') {
             const filtradas = newOpciones.value.filter((o) => o.trim());
@@ -482,10 +587,14 @@ const agregarPregunta = async () => {
         if (newPregunta.value.tipo === 'autocompletado' && newPregunta.value.campo_auto) {
             body.campo_auto = newPregunta.value.campo_auto;
         }
+        if (newPregunta.value.condicion_pregunta_id) {
+            body.condicion_pregunta_id = newPregunta.value.condicion_pregunta_id;
+            body.condicion_respuesta   = newPregunta.value.condicion_respuesta || null;
+        }
         await api.post(`/encuestas/${selected.value.id_encuesta}/preguntas`, body);
         toast.add({ severity: 'success', summary: 'Pregunta agregada', life: 3000 });
         showAddPregDialog.value = false;
-        newPregunta.value = { texto: '', tipo: 'texto_corto', campo_auto: '' };
+        newPregunta.value = { texto: '', tipo: 'texto_corto', campo_auto: '', requerida: true, condicion_pregunta_id: null, condicion_respuesta: '' };
         newOpciones.value = [''];
         await loadEncuestaDetalle(selected.value.id_encuesta);
     } catch (e) {
@@ -497,10 +606,13 @@ const agregarPregunta = async () => {
 
 const abrirEditarPregunta = (preg) => {
     editPregunta.value = {
-        id_pregunta: preg.id_pregunta,
-        texto: preg.texto,
-        orden: preg.orden ?? 0,
-        peso:  preg.peso  ?? 1
+        id_pregunta:           preg.id_pregunta,
+        texto:                 preg.texto,
+        orden:                 preg.orden ?? 0,
+        peso:                  preg.peso  ?? 1,
+        requerida:             preg.requerida ?? true,
+        condicion_pregunta_id: preg.condicion_pregunta_id ?? null,
+        condicion_respuesta:   preg.condicion_respuesta ?? '',
     };
     showEditPregDialog.value = true;
 };
@@ -512,11 +624,17 @@ const guardarPregunta = async () => {
     }
     saving.value = true;
     try {
-        await api.put(`/encuestas/preguntas/${editPregunta.value.id_pregunta}`, {
-            texto: editPregunta.value.texto.trim(),
-            orden: editPregunta.value.orden,
-            peso:  editPregunta.value.peso
-        });
+        const editBody = {
+            texto:    editPregunta.value.texto.trim(),
+            orden:    editPregunta.value.orden,
+            peso:     editPregunta.value.peso,
+            requerida: editPregunta.value.requerida ?? true,
+            condicion_pregunta_id: editPregunta.value.condicion_pregunta_id || null,
+            condicion_respuesta:   editPregunta.value.condicion_pregunta_id
+                                     ? (editPregunta.value.condicion_respuesta || null)
+                                     : null,
+        };
+        await api.put(`/encuestas/preguntas/${editPregunta.value.id_pregunta}`, editBody);
         toast.add({ severity: 'success', summary: 'Pregunta actualizada', life: 3000 });
         showEditPregDialog.value = false;
         await loadEncuestaDetalle(selected.value.id_encuesta);
@@ -527,17 +645,27 @@ const guardarPregunta = async () => {
     }
 };
 
-const eliminarPregunta = async (preg) => {
-    saving.value = true;
-    try {
-        await api.delete(`/encuestas/preguntas/${preg.id_pregunta}`);
-        toast.add({ severity: 'success', summary: 'Pregunta eliminada', life: 3000 });
-        await loadEncuestaDetalle(selected.value.id_encuesta);
-    } catch (e) {
-        toast.add({ severity: 'error', summary: 'Error', detail: e.response?.data?.message || 'No se pudo eliminar la pregunta.', life: 4000 });
-    } finally {
-        saving.value = false;
-    }
+const eliminarPregunta = (preg) => {
+    confirm.require({
+        message: `¿Eliminar la pregunta "${preg.texto?.slice(0, 60) ?? 'esta pregunta'}"? Esta acción no se puede deshacer.`,
+        header: 'Confirmar eliminación',
+        icon: 'pi pi-exclamation-triangle',
+        acceptLabel: 'Eliminar',
+        rejectLabel: 'Cancelar',
+        acceptClass: 'p-button-danger',
+        accept: async () => {
+            saving.value = true;
+            try {
+                await api.delete(`/encuestas/preguntas/${preg.id_pregunta}`);
+                toast.add({ severity: 'success', summary: 'Pregunta eliminada', life: 3000 });
+                await loadEncuestaDetalle(selected.value.id_encuesta);
+            } catch (e) {
+                toast.add({ severity: 'error', summary: 'Error', detail: e.response?.data?.message || 'No se pudo eliminar la pregunta.', life: 4000 });
+            } finally {
+                saving.value = false;
+            }
+        }
+    });
 };
 
 // ════════════════════════════════
@@ -609,11 +737,42 @@ const cargarPlantilla = async () => {
     }
 };
 
+// Seleccionar período en tabs (auto-selects its encuesta)
+const selectPeriodo = async (periodoId) => {
+    filtroPeriodoList.value = periodoId;
+    const enc = encuestas.value.find((e) => e.periodo?.id_periodo === periodoId);
+    if (enc) await selectEncuesta(enc);
+};
+
 // ════════════════════════════════
 // OPCIONES DINÁMICAS
 // ════════════════════════════════
 const addOpcion = () => { newOpciones.value.push(''); };
 const removeOpcion = (i) => { newOpciones.value.splice(i, 1); };
+
+// Preguntas que pueden ser padre de una condición (tienen opciones fijas)
+const preguntasConOpciones = computed(() =>
+    (selected.value?.preguntas ?? []).filter(
+        (p) => (p.tipo === 'opcion_unica' || p.tipo === 'opcion_multiple') && p.opciones?.length > 0
+    )
+);
+
+// Opciones de la pregunta padre seleccionada como condición
+const opcionesCondicionNew = computed(() => {
+    if (!newPregunta.value.condicion_pregunta_id) return [];
+    const padre = (selected.value?.preguntas ?? []).find(
+        (p) => p.id_pregunta === newPregunta.value.condicion_pregunta_id
+    );
+    return padre?.opciones ?? [];
+});
+
+const opcionesCondicionEdit = computed(() => {
+    if (!editPregunta.value.condicion_pregunta_id) return [];
+    const padre = (selected.value?.preguntas ?? []).find(
+        (p) => p.id_pregunta === editPregunta.value.condicion_pregunta_id
+    );
+    return padre?.opciones ?? [];
+});
 
 // Fallback chips escala
 const defaultEscala = [
@@ -627,16 +786,20 @@ const defaultEscala = [
 <template>
     <div class="enc-admin-page">
         <Toast />
+        <ConfirmDialog />
 
         <!-- ════════════════════════════════
              HEADER
         ════════════════════════════════ -->
         <div class="page-header">
-            <div>
-                <h2 class="page-title">Encuestas de satisfacción</h2>
-                <p class="page-subtitle">Gestiona las encuestas del periodo activo — una encuesta por periodo.</p>
+            <div class="page-title-group">
+                <span class="page-icon"><i class="pi pi-clipboard" /></span>
+                <div>
+                    <h4 class="page-title">Encuestas</h4>
+                    <p class="page-subtitle">Gestiona encuestas y evaluaciones por periodo</p>
+                </div>
             </div>
-            <Button label="Nueva encuesta" icon="pi pi-plus" @click="showCreateDialog = true" />
+            <Button label="Nueva encuesta" icon="pi pi-plus" @click="openCreateDialog" />
         </div>
 
         <!-- LOADING -->
@@ -646,118 +809,172 @@ const defaultEscala = [
         </div>
 
         <template v-else>
-            <!-- Alerta sin encuesta activa -->
+            <!-- ════ PERIOD TABS ════ -->
+            <div v-if="periodosConEncuesta.length > 0" class="period-tabs-bar">
+                <button
+                    v-for="p in periodosConEncuesta"
+                    :key="p.id_periodo"
+                    class="period-tab"
+                    :class="{ 'period-tab-active': filtroPeriodoList === p.id_periodo }"
+                    @click="selectPeriodo(p.id_periodo)"
+                >
+                    <span class="ptab-dot" :class="p.estado === 'activo' ? 'ptab-green' : 'ptab-grey'"></span>
+                    <span class="ptab-name">{{ p.nombre }}</span>
+                    <span v-if="p.estado === 'activo'" class="ptab-pill">Activo</span>
+                </button>
+            </div>
+
+            <!-- ════ SIN ENCUESTA EN PERIODO ACTIVO ════ -->
             <div v-if="!encuestaActiva" class="status-banner banner-warning">
                 <div class="banner-icon-wrap icon-warning"><i class="pi pi-exclamation-triangle"></i></div>
                 <div>
-                    <p class="banner-title">Sin encuesta activa</p>
-                    <p class="banner-desc">Los alumnos no pueden ver ninguna encuesta. Activa una o crea una nueva.</p>
+                    <p class="banner-title">Sin encuesta visible para alumnos</p>
+                    <p class="banner-desc">Ninguna encuesta está activa. Usa el botón "Activar" en una tarjeta para que los alumnos puedan responderla.</p>
                 </div>
             </div>
 
-            <!-- Sin encuestas -->
+            <!-- ════ EMPTY STATE GLOBAL ════ -->
             <div v-if="encuestas.length === 0" class="empty-state">
                 <div class="empty-icon-wrap"><i class="pi pi-clipboard"></i></div>
                 <p class="empty-title">Sin encuestas registradas</p>
-                <p class="empty-desc">Crea la primera encuesta para este periodo.</p>
-                <Button label="Crear encuesta" icon="pi pi-plus" @click="showCreateDialog = true" />
+                <p class="empty-desc">Crea la primera encuesta para empezar.</p>
+                <Button label="Crear encuesta" icon="pi pi-plus" @click="openCreateDialog" />
             </div>
 
-            <!-- ════════════════════════════════
-                 LAYOUT: lista + detalle
-            ════════════════════════════════ -->
-            <div v-else class="enc-layout">
-                <!-- Lista lateral -->
-                <div class="enc-list">
-                    <p class="list-label">Encuestas ({{ encuestas.length }})</p>
-                    <div
-                        v-for="enc in encuestas"
-                        :key="enc.id_encuesta"
-                        class="enc-list-item"
-                        :class="{ 'list-item-active': selected?.id_encuesta === enc.id_encuesta }"
-                        @click="selectEncuesta(enc)"
-                    >
-                        <div class="list-item-body">
-                            <p class="list-item-name">{{ enc.nombre }}</p>
-                            <p class="list-item-meta">
-                                {{ enc.preguntas?.length ?? enc.total_preguntas ?? 0 }} pregunta(s)
-                                <span v-if="enc.periodo?.nombre"> · {{ enc.periodo.nombre }}</span>
-                            </p>
+            <!-- ════ EMPTY: periodo seleccionado sin encuestas ════ -->
+            <div v-else-if="encuestasFiltradas.length === 0" class="empty-state">
+                <div class="empty-icon-wrap"><i class="pi pi-plus-circle"></i></div>
+                <p class="empty-title">Este periodo no tiene encuestas</p>
+                <p class="empty-desc">Agrega una encuesta para este periodo.</p>
+                <Button label="Crear encuesta" icon="pi pi-plus" @click="openCreateDialog" />
+            </div>
+
+            <!-- ════ CARDS GRID ════ -->
+            <template v-else>
+            <div class="enc-cards-grid">
+                <div
+                    v-for="enc in encuestasFiltradas"
+                    :key="enc.id_encuesta"
+                    class="enc-card"
+                    :class="{
+                        'enc-card--activa':   enc.activa,
+                        'enc-card--selected': selected?.id_encuesta === enc.id_encuesta,
+                    }"
+                    @click="selectEncuesta(enc)"
+                >
+                    <!-- Header -->
+                    <div class="enc-card-hdr">
+                        <div class="enc-card-hdr-left">
+                            <span class="ecard-dot" :class="enc.activa ? 'ecard-dot--green' : 'ecard-dot--grey'"></span>
+                            <span class="ecard-status" :class="enc.activa ? 'ecard-status--green' : 'ecard-status--grey'">
+                                {{ enc.activa ? 'Visible' : 'Oculta' }}
+                            </span>
                         </div>
-                        <Tag :value="enc.activa ? 'Activa' : 'Inactiva'" :severity="enc.activa ? 'success' : 'secondary'" />
+                        <span v-if="enc.tiene_calificacion" class="ecard-cal-badge">
+                            <i class="pi pi-star"></i> Con calificación
+                        </span>
+                    </div>
+
+                    <!-- Body -->
+                    <div class="enc-card-body">
+                        <h5 class="enc-card-name">{{ enc.nombre ?? '—' }}</h5>
+                        <p v-if="enc.descripcion" class="enc-card-desc">{{ enc.descripcion }}</p>
+                        <div class="enc-card-meta">
+                            <span class="ecard-meta-chip">
+                                <i class="pi pi-list-check"></i>
+                                {{ enc.total_preguntas ?? enc.preguntas?.length ?? 0 }} preguntas
+                            </span>
+                            <span v-if="enc.fecha_creacion" class="ecard-meta-chip">
+                                <i class="pi pi-calendar"></i>
+                                {{ formatDate(enc.fecha_creacion) }}
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- Footer: acciones -->
+                    <div class="enc-card-footer" @click.stop>
+                        <Button
+                            :icon="enc.activa ? 'pi pi-eye-slash' : 'pi pi-eye'"
+                            :label="enc.activa ? 'Desactivar' : 'Activar'"
+                            :severity="enc.activa ? 'secondary' : 'success'"
+                            size="small"
+                            outlined
+                            :loading="saving"
+                            @click="toggleActiva(enc)"
+                        />
+                        <Button
+                            icon="pi pi-pencil"
+                            label="Editar"
+                            severity="secondary"
+                            size="small"
+                            outlined
+                            @click="abrirEditarEncuesta(enc)"
+                        />
+                        <Button
+                            icon="pi pi-copy"
+                            severity="secondary"
+                            size="small"
+                            outlined
+                            v-tooltip.top="'Duplicar'"
+                            @click="selected = enc; dupForm.nombre = enc.nombre + ' (copia)'; dupForm.id_periodo_destino = null; showDuplicateDialog = true;"
+                        />
+                        <Button
+                            icon="pi pi-trash"
+                            severity="danger"
+                            size="small"
+                            outlined
+                            v-tooltip.top="'Eliminar'"
+                            @click="selected = enc; showDeleteDialog = true;"
+                        />
+                    </div>
+                </div>
+            </div>
+
+            <!-- ════ DETAIL PANEL (encuesta seleccionada) ════ -->
+            <div v-if="selected" class="enc-detail-panel">
+
+                <!-- Panel header con info de la encuesta seleccionada -->
+                <div class="detail-panel-header">
+                    <div class="dph-title-row">
+                        <i class="pi pi-clipboard dph-icon"></i>
+                        <div>
+                            <p class="dph-name">{{ selected.nombre }}</p>
+                            <p v-if="selected.descripcion" class="dph-desc">{{ selected.descripcion }}</p>
+                        </div>
+                        <div class="dph-badges">
+                            <Tag
+                                :value="selected.activa ? 'Visible para alumnos' : 'Oculta'"
+                                :severity="selected.activa ? 'success' : 'secondary'"
+                            />
+                            <Tag v-if="selected.tiene_calificacion" value="Con calificación" severity="info" icon="pi pi-star" />
+                        </div>
+                    </div>
+                    <div v-if="totalAlumnos > 0" class="dph-progress-row">
+                        <span class="dph-prog-label">
+                            <i class="pi pi-chart-bar"></i>
+                            {{ totalRespondieron }}/{{ totalAlumnos }} respondieron ({{ pctRespuestas }}%)
+                        </span>
+                        <ProgressBar :value="pctRespuestas" :showValue="false" class="dph-prog-bar" />
                     </div>
                 </div>
 
-                <!-- Panel de detalle -->
-                <div class="enc-detail" v-if="selected">
-                    <!-- Cabecera detalle -->
-                    <div class="detail-header">
-                        <div>
-                            <div class="detail-title-row">
-                                <h3 class="detail-title">{{ selected.nombre }}</h3>
-                                <Tag :value="selected.activa ? 'Activa' : 'Inactiva'" :severity="selected.activa ? 'success' : 'secondary'" />
-                            </div>
-                            <p v-if="selected.descripcion" class="detail-description">{{ selected.descripcion }}</p>
-                            <p class="detail-meta">
-                                <i class="pi pi-tag"></i>
-                                Periodo: {{ selected.periodo?.nombre ?? '—' }}
-                                &nbsp;·&nbsp;
-                                <i class="pi pi-list"></i>
-                                {{ selected.preguntas?.length ?? 0 }} pregunta(s)
-                                <template v-if="selected.created_at">
-                                    &nbsp;·&nbsp;
-                                    <i class="pi pi-calendar"></i>
-                                    Creada el {{ formatDate(selected.created_at) }}
-                                </template>
-                            </p>
-                        </div>
-
-                        <!-- Acciones -->
-                        <div class="detail-actions">
-                            <Button
-                                :label="selected.activa ? 'Desactivar' : 'Activar'"
-                                :icon="selected.activa ? 'pi pi-eye-slash' : 'pi pi-eye'"
-                                :severity="selected.activa ? 'secondary' : 'success'"
-                                outlined
-                                :loading="saving"
-                                @click="toggleActiva(selected)"
-                            />
-                            <Button
-                                label="Duplicar"
-                                icon="pi pi-copy"
-                                severity="secondary"
-                                outlined
-                                @click="dupForm.nombre = selected.nombre + ' (copia)'; dupForm.id_periodo_destino = null; showDuplicateDialog = true;"
-                            />
-                            <Button
-                                icon="pi pi-trash"
-                                severity="danger"
-                                outlined
-                                v-tooltip.top="'Eliminar encuesta'"
-                                @click="showDeleteDialog = true"
-                            />
-                        </div>
-                    </div>
-
-                    <div class="detail-divider"></div>
-
-                    <!-- Tabs -->
-                    <div class="detail-tabs">
-                        <button
-                            class="detail-tab"
-                            :class="{ 'detail-tab-active': activeTab === 'preguntas' }"
-                            @click="switchTab('preguntas')"
-                        >
-                            <i class="pi pi-list-check"></i> Preguntas ({{ selected.preguntas?.length ?? 0 }})
-                        </button>
-                        <button
-                            class="detail-tab"
-                            :class="{ 'detail-tab-active': activeTab === 'respuestas' }"
-                            @click="switchTab('respuestas')"
-                        >
-                            <i class="pi pi-inbox"></i> Respuestas contestadas
-                        </button>
-                    </div>
+                <!-- ── Tabs ── -->
+                <div class="detail-tabs">
+                    <button
+                        class="detail-tab"
+                        :class="{ 'detail-tab-active': activeTab === 'preguntas' }"
+                        @click="switchTab('preguntas')"
+                    >
+                        <i class="pi pi-list-check"></i> Preguntas ({{ selected.preguntas?.length ?? 0 }})
+                    </button>
+                    <button
+                        class="detail-tab"
+                        :class="{ 'detail-tab-active': activeTab === 'respuestas' }"
+                        @click="switchTab('respuestas')"
+                    >
+                        <i class="pi pi-inbox"></i> Respuestas
+                    </button>
+                </div>
 
                     <!-- Sección preguntas -->
                     <div class="questions-section" v-if="activeTab === 'preguntas'">
@@ -807,13 +1024,22 @@ const defaultEscala = [
                                             <i :class="tipoConfig(preg.tipo).icon"></i>
                                             {{ tipoConfig(preg.tipo).label }}
                                         </span>
-                                        <!-- Chips para opcion_unica / opcion_multiple -->
-                                        <div v-if="(preg.tipo === 'opcion_unica' || preg.tipo === 'opcion_multiple') && preg.opciones_escala?.length" class="question-scale">
-                                            <span
-                                                v-for="op in preg.opciones_escala"
-                                                :key="op.valor"
-                                                class="scale-chip scale-opcion"
-                                            >{{ op.etiqueta }}</span>
+                                        <!-- Requerida / Opcional -->
+                                        <span class="tipo-badge" :class="preg.requerida !== false ? 'badge-req' : 'badge-opt'">
+                                            <i :class="preg.requerida !== false ? 'pi pi-asterisk' : 'pi pi-minus-circle'"></i>
+                                            {{ preg.requerida !== false ? 'Obligatoria' : 'Opcional' }}
+                                        </span>
+                                        <!-- Condición -->
+                                        <span v-if="preg.condicion_pregunta_id" class="tipo-badge badge-cond" :title="`Depende de la pregunta #${preg.condicion_pregunta_id} = '${preg.condicion_respuesta}'`">
+                                            <i class="pi pi-filter"></i>
+                                            Condicional
+                                        </span>
+                                        <!-- Chips opciones -->
+                                        <div v-if="(preg.tipo === 'opcion_unica' || preg.tipo === 'opcion_multiple') && preg.opciones?.length" class="question-scale">
+                                            <span v-for="op in preg.opciones" :key="op" class="scale-chip scale-opcion">{{ op }}</span>
+                                        </div>
+                                        <div v-else-if="(preg.tipo === 'opcion_unica' || preg.tipo === 'opcion_multiple') && preg.opciones_escala?.length" class="question-scale">
+                                            <span v-for="op in preg.opciones_escala" :key="op.valor" class="scale-chip scale-opcion">{{ op.etiqueta }}</span>
                                         </div>
                                         <!-- Chips para escala -->
                                         <div v-else-if="preg.tipo === 'escala'" class="question-scale">
@@ -1076,10 +1302,10 @@ const defaultEscala = [
                             </template>
 
                         </template>
-                    </div>
-                </div>
-            </div>
-        </template>
+                    </div><!-- /resp-section -->
+            </div><!-- /enc-detail-panel -->
+            </template><!-- /cards + detail -->
+        </template><!-- /v-else loading -->
 
         <!-- ════════════════════════════════
              DIALOG — Crear encuesta
@@ -1088,18 +1314,28 @@ const defaultEscala = [
             <div class="dialog-body">
                 <div class="dialog-hint">
                     <i class="pi pi-info-circle hint-icon"></i>
-                    <span>Solo puede haber <strong>una encuesta activa</strong> a la vez. La nueva se creará como inactiva.</span>
+                    <span>La nueva encuesta se creará como <strong>inactiva</strong>. Un periodo puede tener varias encuestas — actívalas individualmente cuando quieras que los alumnos las vean.</span>
                 </div>
                 <div class="dialog-field">
                     <label class="dialog-label">Periodo <span class="field-required">*</span></label>
                     <Select
                         v-model="newEncuesta.id_periodo"
-                        :options="periodos"
+                        :options="periodosDisponibles"
                         optionLabel="nombre"
                         optionValue="id_periodo"
                         placeholder="Selecciona un periodo"
                         class="w-full"
-                    />
+                    >
+                        <template #option="{ option }">
+                            <div class="enc-period-opt">
+                                <span>{{ option.nombre }}</span>
+                                <span v-if="option.estado === 'activo'" class="enc-period-badge">● Activo</span>
+                            </div>
+                        </template>
+                    </Select>
+                    <small v-if="periodosDisponibles.length === 0" class="enc-no-periodos">
+                        Todos los períodos ya tienen encuesta asignada.
+                    </small>
                 </div>
                 <div class="dialog-field">
                     <label class="dialog-label">Nombre de la encuesta <span class="field-required">*</span></label>
@@ -1109,10 +1345,62 @@ const defaultEscala = [
                     <label class="dialog-label">Descripción <span class="field-optional">(opcional)</span></label>
                     <Textarea v-model="newEncuesta.descripcion" placeholder="Evaluación del periodo de prácticas…" rows="2" autoResize class="w-full" />
                 </div>
+                <div class="dialog-field dialog-field--check">
+                    <Checkbox v-model="newEncuesta.tiene_calificacion" :binary="true" inputId="chk_tiene_cal" />
+                    <label for="chk_tiene_cal" class="dialog-label--inline">
+                        Lleva calificación
+                        <span class="field-hint">Actívalo si esta encuesta es un examen o evaluación que se asienta como nota en el historial del alumno.</span>
+                    </label>
+                </div>
             </div>
             <template #footer>
                 <Button label="Cancelar" text severity="secondary" @click="showCreateDialog = false" />
                 <Button label="Crear encuesta" icon="pi pi-check" :loading="saving" @click="crearEncuesta" />
+            </template>
+        </Dialog>
+
+        <!-- ════════════════════════════════
+             DIALOG — Editar encuesta
+        ════════════════════════════════ -->
+        <Dialog v-model:visible="showEditEncDialog" modal header="Editar encuesta" :style="{ width: '480px' }">
+            <div class="dialog-body">
+                <div class="dialog-field">
+                    <label class="dialog-label">Nombre <span class="field-required">*</span></label>
+                    <InputText v-model="editEncForm.nombre" placeholder="Nombre de la encuesta" class="w-full" />
+                </div>
+                <div class="dialog-field">
+                    <label class="dialog-label">Periodo <span class="field-required">*</span></label>
+                    <Select
+                        v-model="editEncForm.id_periodo"
+                        :options="periodos"
+                        optionLabel="nombre"
+                        optionValue="id_periodo"
+                        placeholder="Selecciona un periodo"
+                        class="w-full"
+                    >
+                        <template #option="{ option }">
+                            <div class="enc-period-opt">
+                                <span>{{ option.nombre }}</span>
+                                <span v-if="option.estado === 'activo'" class="enc-period-badge">● Activo</span>
+                            </div>
+                        </template>
+                    </Select>
+                </div>
+                <div class="dialog-field">
+                    <label class="dialog-label">Descripción <span class="field-optional">(opcional)</span></label>
+                    <Textarea v-model="editEncForm.descripcion" placeholder="Descripción…" rows="2" autoResize class="w-full" />
+                </div>
+                <div class="dialog-field dialog-field--check">
+                    <Checkbox v-model="editEncForm.tiene_calificacion" :binary="true" inputId="chk_edit_cal" />
+                    <label for="chk_edit_cal" class="dialog-label--inline">
+                        Lleva calificación
+                        <span class="field-hint">Actívalo si esta encuesta es un examen o evaluación que se asienta como nota en el historial del alumno.</span>
+                    </label>
+                </div>
+            </div>
+            <template #footer>
+                <Button label="Cancelar" text severity="secondary" @click="showEditEncDialog = false" />
+                <Button label="Guardar cambios" icon="pi pi-check" :loading="saving" @click="guardarEditarEncuesta" />
             </template>
         </Dialog>
 
@@ -1190,9 +1478,49 @@ const defaultEscala = [
                         class="w-full"
                     />
                 </div>
+
+                <!-- Separador de lógica avanzada -->
+                <div class="dialog-section-sep">Comportamiento</div>
+
+                <!-- Requerida -->
+                <div class="dialog-field dialog-field--check">
+                    <Checkbox v-model="newPregunta.requerida" :binary="true" inputId="chk_new_req" />
+                    <label for="chk_new_req" class="dialog-label--inline">
+                        Obligatoria
+                        <span class="field-hint">Si está desactivado, el alumno puede dejarla en blanco.</span>
+                    </label>
+                </div>
+
+                <!-- Condición (solo si hay preguntas con opciones previas) -->
+                <div v-if="preguntasConOpciones.length > 0" class="dialog-field">
+                    <label class="dialog-label">
+                        Mostrar solo si… <span class="field-optional">(condicional)</span>
+                    </label>
+                    <Select
+                        v-model="newPregunta.condicion_pregunta_id"
+                        :options="[{ id_pregunta: null, texto: 'Sin condición (siempre visible)' }, ...preguntasConOpciones]"
+                        optionLabel="texto"
+                        optionValue="id_pregunta"
+                        placeholder="Sin condición"
+                        class="w-full"
+                        @change="newPregunta.condicion_respuesta = ''"
+                    />
+                </div>
+                <div v-if="newPregunta.condicion_pregunta_id && opcionesCondicionNew.length" class="dialog-field">
+                    <label class="dialog-label">…la respuesta sea</label>
+                    <Select
+                        v-model="newPregunta.condicion_respuesta"
+                        :options="opcionesCondicionNew"
+                        placeholder="Selecciona el valor"
+                        class="w-full"
+                    />
+                    <small class="field-hint" style="margin-top:4px;display:block">
+                        Esta pregunta solo se mostrará si la pregunta padre tiene exactamente esa respuesta.
+                    </small>
+                </div>
             </div>
             <template #footer>
-                <Button label="Cancelar" text severity="secondary" @click="showAddPregDialog = false; newPregunta = { texto: '', tipo: 'texto_corto', campo_auto: '' }; newOpciones = [''];" />
+                <Button label="Cancelar" text severity="secondary" @click="showAddPregDialog = false; newPregunta.value = { texto: '', tipo: 'texto_corto', campo_auto: '', requerida: true, condicion_pregunta_id: null, condicion_respuesta: '' }; newOpciones.value = [''];" />
                 <Button label="Agregar" icon="pi pi-plus" :loading="saving" @click="agregarPregunta" />
             </template>
         </Dialog>
@@ -1200,7 +1528,7 @@ const defaultEscala = [
         <!-- ════════════════════════════════
              DIALOG — Editar pregunta
         ════════════════════════════════ -->
-        <Dialog v-model:visible="showEditPregDialog" modal header="Editar pregunta" :style="{ width: '500px' }">
+        <Dialog v-model:visible="showEditPregDialog" modal header="Editar pregunta" :style="{ width: '520px' }">
             <div class="dialog-body">
                 <div class="dialog-field">
                     <label class="dialog-label">Texto de la pregunta</label>
@@ -1215,6 +1543,45 @@ const defaultEscala = [
                         <label class="dialog-label">Peso</label>
                         <InputNumber v-model="editPregunta.peso" :min="1" :useGrouping="false" class="w-full" />
                     </div>
+                </div>
+
+                <div class="dialog-section-sep">Comportamiento</div>
+
+                <!-- Requerida -->
+                <div class="dialog-field dialog-field--check">
+                    <Checkbox v-model="editPregunta.requerida" :binary="true" inputId="chk_edit_req" />
+                    <label for="chk_edit_req" class="dialog-label--inline">
+                        Obligatoria
+                        <span class="field-hint">Si está desactivado, el alumno puede dejarla en blanco.</span>
+                    </label>
+                </div>
+
+                <!-- Condición -->
+                <div v-if="preguntasConOpciones.length > 0" class="dialog-field">
+                    <label class="dialog-label">
+                        Mostrar solo si… <span class="field-optional">(condicional)</span>
+                    </label>
+                    <Select
+                        v-model="editPregunta.condicion_pregunta_id"
+                        :options="[{ id_pregunta: null, texto: 'Sin condición (siempre visible)' }, ...preguntasConOpciones.filter(p => p.id_pregunta !== editPregunta.id_pregunta)]"
+                        optionLabel="texto"
+                        optionValue="id_pregunta"
+                        placeholder="Sin condición"
+                        class="w-full"
+                        @change="editPregunta.condicion_respuesta = ''"
+                    />
+                </div>
+                <div v-if="editPregunta.condicion_pregunta_id && opcionesCondicionEdit.length" class="dialog-field">
+                    <label class="dialog-label">…la respuesta sea</label>
+                    <Select
+                        v-model="editPregunta.condicion_respuesta"
+                        :options="opcionesCondicionEdit"
+                        placeholder="Selecciona el valor"
+                        class="w-full"
+                    />
+                    <small class="field-hint" style="margin-top:4px;display:block">
+                        Esta pregunta solo aparecerá cuando la pregunta padre tenga esa respuesta exacta.
+                    </small>
                 </div>
             </div>
             <template #footer>
@@ -1386,9 +1753,9 @@ const defaultEscala = [
 /* ════════════════════════════════════════
    HEADER
 ════════════════════════════════════════ */
-.page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
-.page-title  { font-size: 1.4rem; font-weight: 700; color: var(--text-color); margin: 0 0 0.25rem; }
-.page-subtitle { font-size: 0.875rem; color: var(--text-color-secondary); margin: 0; }
+.page-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.page-title  { font-size: 1.15rem; font-weight: 700; color: var(--text-color); margin: 0 0 0.1rem; }
+.page-subtitle { font-size: 0.8rem; color: var(--text-color-secondary); margin: 0; }
 
 /* ════════════════════════════════════════
    LOADING / EMPTY
@@ -1426,30 +1793,144 @@ const defaultEscala = [
 .banner-desc  { font-size: 0.825rem; color: var(--text-color-secondary); margin: 0; }
 
 /* ════════════════════════════════════════
-   LAYOUT LISTA + DETALLE
+   PERIOD TABS
 ════════════════════════════════════════ */
-.enc-layout { display: grid; grid-template-columns: 270px 1fr; gap: 1.25rem; align-items: start; }
+.period-tabs-bar {
+    display: flex; flex-wrap: wrap; gap: 0.5rem;
+    padding: 0.25rem 0;
+}
+.period-tab {
+    display: inline-flex; align-items: center; gap: 0.45rem;
+    padding: 0.45rem 1rem; border-radius: 99px;
+    font-size: 0.825rem; font-weight: 600;
+    border: 1.5px solid var(--sisa-border);
+    background: var(--surface-card); color: var(--text-color-secondary);
+    cursor: pointer; transition: all 0.15s;
+}
+.period-tab:hover { border-color: var(--sisa-primary-l); color: var(--sisa-primary-l); }
+.period-tab-active { border-color: var(--sisa-primary-l); background: var(--sisa-accent-surface); color: var(--sisa-primary-l); }
+.ptab-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.ptab-green { background: #22c55e; }
+.ptab-grey  { background: var(--text-color-secondary); opacity: 0.4; }
+.ptab-name  { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ptab-pill  {
+    font-size: 0.62rem; font-weight: 800; letter-spacing: 0.04em;
+    background: #dcfce7; color: #15803d; padding: 0.1rem 0.45rem; border-radius: 99px;
+}
+@media (prefers-color-scheme: dark) {
+    .ptab-pill { background: rgba(34,197,94,0.15); color: #4ade80; }
+}
 
-/* Lista lateral */
-.enc-list { background: var(--surface-card); border: 1px solid var(--sisa-border); border-radius: 12px; overflow: hidden; }
-.list-label { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-color-secondary); padding: 0.875rem 1rem 0.5rem; margin: 0; }
-.enc-list-item { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.75rem 1rem; border-top: 1px solid var(--sisa-border); cursor: pointer; transition: background 0.15s; }
-.enc-list-item:hover { background: var(--surface-hover); }
-.list-item-active { background: var(--sisa-accent-surface); border-left: 3px solid var(--sisa-primary-l); }
-.list-item-name { font-size: 0.875rem; font-weight: 600; color: var(--text-color); margin: 0 0 2px; }
-.list-item-meta { font-size: 0.75rem; color: var(--text-color-secondary); margin: 0; }
+/* ════════════════════════════════════════
+   HEADER ICON + TITLE GROUP
+════════════════════════════════════════ */
+.page-title-group { display: flex; align-items: center; gap: 0.875rem; }
+.page-icon {
+    width: 2.5rem; height: 2.5rem; border-radius: 10px;
+    background: var(--sisa-tint-blue); color: var(--sisa-icon-blue);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.15rem; flex-shrink: 0;
+}
 
-/* Panel de detalle */
-.enc-detail { background: var(--surface-card); border: 1px solid var(--sisa-border); border-radius: 12px; padding: 1.5rem; display: flex; flex-direction: column; gap: 1.25rem; }
+/* ════════════════════════════════════════
+   ENCUESTA CARDS GRID
+════════════════════════════════════════ */
+.enc-cards-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1rem;
+}
 
-.detail-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
-.detail-title-row { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 0.25rem; }
-.detail-title { font-size: 1.2rem; font-weight: 700; color: var(--text-color); margin: 0; }
-.detail-description { font-size: 0.875rem; color: var(--text-color-secondary); margin: 0.25rem 0 0; line-height: 1.5; }
-.detail-meta { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; font-size: 0.8rem; color: var(--text-color-secondary); margin: 0.5rem 0 0; }
-.detail-meta i { font-size: 0.75rem; }
+.enc-card {
+    display: flex; flex-direction: column;
+    background: var(--surface-card);
+    border: 2px solid var(--sisa-border);
+    border-radius: 14px; overflow: hidden;
+    cursor: pointer;
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+.enc-card:hover { border-color: var(--sisa-primary-l); box-shadow: 0 4px 16px rgba(0,0,0,0.06); }
+.enc-card--selected { border-color: var(--sisa-primary-l); box-shadow: 0 0 0 3px var(--sisa-accent-surface); }
+.enc-card--activa   { border-top: 3px solid #22c55e; }
+
+/* Card header */
+.enc-card-hdr {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0.625rem 1rem 0;
+}
+.enc-card-hdr-left { display: flex; align-items: center; gap: 0.4rem; }
+.ecard-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.ecard-dot--green { background: #22c55e; }
+.ecard-dot--grey  { background: var(--text-color-secondary); opacity: 0.35; }
+.ecard-status { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+.ecard-status--green { color: #16a34a; }
+.ecard-status--grey  { color: var(--text-color-secondary); }
+.ecard-cal-badge {
+    display: inline-flex; align-items: center; gap: 0.25rem;
+    font-size: 0.68rem; font-weight: 700;
+    background: var(--sisa-tint-blue); color: var(--sisa-icon-blue);
+    padding: 0.15rem 0.5rem; border-radius: 99px;
+}
+
+/* Card body */
+.enc-card-body { flex: 1; padding: 0.625rem 1rem 0.75rem; display: flex; flex-direction: column; gap: 0.35rem; }
+.enc-card-name { font-size: 1rem; font-weight: 700; color: var(--text-color); margin: 0; line-height: 1.3; }
+.enc-card-desc {
+    font-size: 0.82rem; color: var(--text-color-secondary);
+    margin: 0; line-height: 1.4;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.enc-card-meta { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.4rem; }
+.ecard-meta-chip {
+    display: inline-flex; align-items: center; gap: 0.3rem;
+    font-size: 0.73rem; color: var(--text-color-secondary);
+    background: var(--surface-ground); padding: 0.2rem 0.55rem;
+    border-radius: 6px; border: 1px solid var(--sisa-border);
+}
+.ecard-meta-chip i { font-size: 0.65rem; }
+
+/* Card footer */
+.enc-card-footer {
+    display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap;
+    padding: 0.625rem 0.75rem;
+    border-top: 1px solid var(--sisa-border);
+    background: var(--surface-ground);
+}
+
+/* ════════════════════════════════════════
+   DETAIL PANEL HEADER
+════════════════════════════════════════ */
+.detail-panel-header {
+    background: var(--surface-ground);
+    border: 1px solid var(--sisa-border);
+    border-radius: 12px; padding: 1rem 1.25rem;
+    display: flex; flex-direction: column; gap: 0.625rem;
+}
+.dph-title-row { display: flex; align-items: flex-start; gap: 0.75rem; flex-wrap: wrap; }
+.dph-icon { font-size: 1.1rem; color: var(--sisa-primary-l); flex-shrink: 0; margin-top: 2px; }
+.dph-name { font-size: 1.05rem; font-weight: 700; color: var(--text-color); margin: 0; }
+.dph-desc { font-size: 0.82rem; color: var(--text-color-secondary); margin: 0.1rem 0 0; }
+.dph-badges { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-left: auto; }
+.dph-progress-row { display: flex; align-items: center; gap: 0.75rem; }
+.dph-prog-label { font-size: 0.78rem; color: var(--text-color-secondary); white-space: nowrap; display: flex; align-items: center; gap: 0.35rem; }
+.dph-prog-bar { flex: 1; height: 5px !important; border-radius: 99px; }
+
+/* ════════════════════════════════════════
+   DETAIL PANEL (full-width, no sidebar)
+════════════════════════════════════════ */
+.enc-detail-panel {
+    background: var(--surface-card); border: 1px solid var(--sisa-border);
+    border-radius: 14px; padding: 1.25rem 1.5rem;
+    display: flex; flex-direction: column; gap: 1.25rem;
+}
+
+.esc-progress-bar { height: 6px !important; border-radius: 99px; }
+
+/* Keep old classes for compat */
+.enc-period-opt { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; width: 100%; }
+.enc-period-badge { font-size: 0.7rem; font-weight: 700; color: #22c55e; white-space: nowrap; }
+.enc-no-periodos { color: var(--text-color-secondary); font-size: 0.75rem; margin-top: 0.25rem; }
 .detail-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
-.detail-divider { height: 1px; background: var(--sisa-border); }
 
 /* ── Preguntas ─────────────────── */
 .questions-section { display: flex; flex-direction: column; gap: 1rem; }
@@ -1471,6 +1952,9 @@ const defaultEscala = [
 .tipo-texto   { background: var(--sisa-tint-purple); color: var(--sisa-icon-purple); }
 .tipo-opcion  { background: var(--sisa-tint-amber);  color: var(--sisa-icon-amber);  }
 .tipo-auto    { background: var(--sisa-tint-green);  color: var(--sisa-icon-green);  }
+.badge-req    { background: #fee2e2; color: #dc2626; }
+.badge-opt    { background: var(--surface-border); color: var(--text-color-secondary); }
+.badge-cond   { background: #ede9fe; color: #7c3aed; cursor: help; }
 
 /* Chips de escala / opcion */
 .question-scale { display: flex; gap: 0.25rem; flex-wrap: wrap; }
@@ -1514,9 +1998,22 @@ const defaultEscala = [
 .hint-icon-danger { color: var(--sisa-icon-red);  flex-shrink: 0; margin-top: 1px; }
 
 .dialog-field { display: flex; flex-direction: column; gap: 0.5rem; }
+.dialog-field--check { flex-direction: row; align-items: flex-start; gap: 0.6rem; }
 .dialog-label { font-size: 0.875rem; font-weight: 600; color: var(--text-color); }
+.dialog-label--inline { font-size: 0.875rem; font-weight: 600; color: var(--text-color); display: flex; flex-direction: column; gap: 0.2rem; cursor: pointer; }
+.field-hint { font-size: 0.75rem; font-weight: 400; color: var(--text-color-secondary); line-height: 1.4; }
 .field-required { color: var(--sisa-icon-red); font-size: 0.8rem; }
 .field-optional { font-size: 0.75rem; color: var(--text-color-secondary); font-weight: 400; }
+.dialog-section-sep {
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-color-secondary);
+    border-top: 1px solid var(--sisa-border);
+    padding-top: 0.75rem;
+    margin-top: 0.25rem;
+}
 
 /* Selector de tipo de pregunta */
 .tipo-selector { display: flex; gap: 0.5rem; flex-wrap: wrap; }

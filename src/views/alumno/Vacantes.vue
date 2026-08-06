@@ -13,7 +13,7 @@ import ProgressSpinner from 'primevue/progressspinner';
 import SelectButton from 'primevue/selectbutton';
 import Tag from 'primevue/tag';
 import Toast from 'primevue/toast';
-import { useToast } from 'primevue/usetoast';
+import { useToast } from '@/composables/useAppToast';
 
 const toast = useToast();
 
@@ -156,6 +156,22 @@ watch(modoFiltro, async () => {
 // ==========================
 // ACTIONS
 // ==========================
+
+const cupoCupoClass = (v) => {
+    const d = v.cupo_disponible ?? 0;
+    if (d === 0) return 'vac-full';
+    if (d === 1) return 'vac-last';
+    if (d <= 2)  return 'vac-few';
+    return 'vac-ok';
+};
+
+const cupoLabelAlumno = (v) => {
+    const d = v.cupo_disponible ?? 0;
+    if (d === 0) return 'Sin lugares';
+    if (d === 1) return 'Último lugar';
+    if (d <= 2)  return `${d} lugares — quedan pocos`;
+    return `${d} lugares disponibles`;
+};
 
 const confirmarPostulacion = (vacante) => {
     vacanteSeleccionada.value = vacante;
@@ -382,22 +398,24 @@ const descargarCarta = async () => {
                             v-for="v in vacantesFiltradas"
                             :key="v.id_categoria"
                             class="vac-card"
-                            :class="{ 'vac-card-active': vacanteSeleccionada?.id_categoria === v.id_categoria }"
-                            @click="vacanteSeleccionada = v"
+                            :class="[
+                                { 'vac-card-active': vacanteSeleccionada?.id_categoria === v.id_categoria },
+                                cupoCupoClass(v)
+                            ]"
+                            @click="v.cupo_disponible > 0 && (vacanteSeleccionada = v)"
                             role="button"
-                            :tabindex="0"
-                            @keyup.enter="vacanteSeleccionada = v"
+                            :tabindex="v.cupo_disponible > 0 ? 0 : -1"
+                            @keyup.enter="v.cupo_disponible > 0 && (vacanteSeleccionada = v)"
                         >
                             <!-- Cabecera de card: logo + badge -->
                             <div class="vac-card-top">
                                 <div class="vac-card-logo">
                                     <i class="pi pi-briefcase"></i>
                                 </div>
-                                <Tag
-                                    :value="v.cupo_disponible > 0 ? `${v.cupo_disponible} cupos` : 'Sin cupo'"
-                                    :severity="v.cupo_disponible > 0 ? 'success' : 'danger'"
-                                    class="cupos-tag"
-                                />
+                                <span class="cupo-pill" :class="`cupo-pill--${cupoCupoClass(v)}`">
+                                    <i :class="(v.cupo_disponible ?? 0) === 0 ? 'pi pi-ban' : (v.cupo_disponible ?? 0) === 1 ? 'pi pi-exclamation-circle' : 'pi pi-users'" />
+                                    {{ cupoLabelAlumno(v) }}
+                                </span>
                             </div>
 
                             <!-- Título y empresa -->
@@ -409,6 +427,20 @@ const descargarCarta = async () => {
 
                             <!-- Descripción — truncada en desktop, completa en móvil -->
                             <p class="vac-card-desc">{{ v.descripcion || 'Sin descripción disponible.' }}</p>
+
+                            <!-- Modalidad + remuneración -->
+                            <div class="vac-meta-badges">
+                                <span class="vac-meta-badge" :class="`vac-meta-badge--${v.modalidad ?? 'presencial'}`">
+                                    <i :class="`pi ${v.modalidad === 'remoto' ? 'pi-home' : v.modalidad === 'hibrido' ? 'pi-sync' : 'pi-building'}`" />
+                                    {{ v.modalidad === 'remoto' ? 'Remoto' : v.modalidad === 'hibrido' ? 'Híbrido' : 'Presencial' }}
+                                </span>
+                                <span v-if="v.tiene_remuneracion" class="vac-meta-badge vac-meta-badge--rem">
+                                    <i class="pi pi-dollar" />
+                                    {{ v.monto_remuneracion != null
+                                        ? v.monto_remuneracion.toLocaleString('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 })
+                                        : 'Remunerada' }}
+                                </span>
+                            </div>
 
                             <!-- Botón de postulación — solo visible en móvil -->
                             <div class="vac-card-mobile-footer">
@@ -448,10 +480,11 @@ const descargarCarta = async () => {
                             <!-- Título + badge -->
                             <div class="detail-title-row">
                                 <h2 class="detail-title">{{ vacanteSeleccionada.nombre }}</h2>
-                                <Tag
-                                    :value="vacanteSeleccionada.cupo_disponible > 0 ? `${vacanteSeleccionada.cupo_disponible} cupos` : 'Sin cupo'"
-                                    :severity="vacanteSeleccionada.cupo_disponible > 0 ? 'success' : 'danger'"
-                                />
+                                <span class="cupo-pill" :class="`cupo-pill--${cupoCupoClass(vacanteSeleccionada)}`">
+                                    <i :class="(vacanteSeleccionada.cupo_disponible ?? 0) === 0 ? 'pi pi-ban' : (vacanteSeleccionada.cupo_disponible ?? 0) === 1 ? 'pi pi-exclamation-circle' : 'pi pi-users'" />
+                                    {{ cupoLabelAlumno(vacanteSeleccionada) }}
+                                    <span class="cupo-detail-fraction">({{ vacanteSeleccionada.cupo_disponible ?? 0 }}/{{ vacanteSeleccionada.cupo_total }})</span>
+                                </span>
                             </div>
 
                             <!-- Empresa -->
@@ -790,11 +823,33 @@ const descargarCarta = async () => {
     box-shadow: 0 0 0 3px rgba(21, 101, 192, 0.25);
 }
 
+/* Availability color coding */
+.vac-card.vac-ok   { border-left-color: #16a34a; }
+.vac-card.vac-few  { border-left-color: #d97706; }
+.vac-card.vac-last { border-left-color: #dc2626; }
+.vac-card.vac-full {
+    border-left-color: #9ca3af;
+    opacity: 0.55;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
 .vac-card-active {
     border-left-color: var(--sisa-primary-l);
     background: var(--sisa-accent-surface);
     box-shadow: 0 2px 10px rgba(21, 101, 192, 0.12);
 }
+
+/* Cupo pill */
+.cupo-pill {
+    display: inline-flex; align-items: center; gap: .3rem;
+    font-size: .72rem; font-weight: 600; padding: .2rem .55rem;
+    border-radius: 999px;
+}
+.cupo-pill--vac-ok   { background: rgba(22,163,74,.12);  color: #16a34a; }
+.cupo-pill--vac-few  { background: rgba(217,119,6,.12);  color: #d97706; }
+.cupo-pill--vac-last { background: rgba(220,38,38,.12);  color: #dc2626; }
+.cupo-pill--vac-full { background: rgba(156,163,175,.15); color: #6b7280; }
 
 /* Cabecera de la card */
 .vac-card-top {
@@ -822,6 +877,7 @@ const descargarCarta = async () => {
 }
 
 .cupos-tag { font-size: 0.72rem; }
+.cupo-detail-fraction { font-weight: 400; opacity: 0.75; margin-left: .1rem; }
 
 /* Título */
 .vac-card-title {
@@ -852,6 +908,44 @@ const descargarCarta = async () => {
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
+}
+
+/* Modalidad + remuneración badges */
+.vac-meta-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    margin-top: 0.5rem;
+}
+
+.vac-meta-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 0.15rem 0.45rem;
+    border-radius: 999px;
+}
+
+.vac-meta-badge--presencial {
+    background: var(--sisa-tint-blue, #e8f1fb);
+    color: var(--sisa-icon-blue, #1c6aac);
+}
+
+.vac-meta-badge--remoto {
+    background: var(--sisa-tint-purple, #f0eafa);
+    color: var(--sisa-icon-purple, #7c3aed);
+}
+
+.vac-meta-badge--hibrido {
+    background: var(--sisa-tint-amber, #fff8e1);
+    color: var(--sisa-icon-amber, #b45309);
+}
+
+.vac-meta-badge--rem {
+    background: var(--sisa-tint-green, #e6f4ea);
+    color: var(--sisa-icon-green, #15803d);
 }
 
 /* Botón móvil — oculto en desktop */

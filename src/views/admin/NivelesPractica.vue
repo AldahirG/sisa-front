@@ -1,16 +1,19 @@
 <script setup>
 import api from '@/api/axios';
 import Button from 'primevue/button';
+import ConfirmDialog from 'primevue/confirmdialog';
 import Column from 'primevue/column';
 import DataTable from 'primevue/datatable';
 import Dialog from 'primevue/dialog';
 import InputNumber from 'primevue/inputnumber';
 import Select from 'primevue/select';
 import Tag from 'primevue/tag';
-import { useToast } from 'primevue/usetoast';
+import { useConfirm } from 'primevue/useconfirm';
+import { useToast } from '@/composables/useAppToast';
 import { computed, onMounted, ref } from 'vue';
 
 const toast = useToast();
+const confirm = useConfirm();
 
 // ==========================
 // CATÁLOGOS
@@ -126,14 +129,24 @@ const guardar = async () => {
     }
 };
 
-const eliminar = async (row) => {
-    try {
-        await api.delete(`/niveles-practica/${row.id}`);
-        toast.add({ severity: 'success', summary: 'Eliminado', detail: `Nivel ${row.numero_practica} de ${row.carrera} eliminado`, life: 3000 });
-        await loadNiveles();
-    } catch (e) {
-        toast.add({ severity: 'error', summary: 'Error', detail: e.response?.data?.message || 'No se pudo eliminar', life: 4000 });
-    }
+const eliminar = (row) => {
+    confirm.require({
+        message: `¿Eliminar el nivel de práctica ${row.numero_practica} para ${row.carrera} (semestre ${row.cuatrimestre})?`,
+        header: 'Confirmar eliminación',
+        icon: 'pi pi-exclamation-triangle',
+        acceptLabel: 'Eliminar',
+        rejectLabel: 'Cancelar',
+        acceptClass: 'p-button-danger',
+        accept: async () => {
+            try {
+                await api.delete(`/niveles-practica/${row.id}`);
+                toast.add({ severity: 'success', summary: 'Eliminado', detail: `Nivel ${row.numero_practica} de ${row.carrera} eliminado`, life: 3000 });
+                await loadNiveles();
+            } catch (e) {
+                toast.add({ severity: 'error', summary: 'Error', detail: e.response?.data?.message || 'No se pudo eliminar', life: 4000 });
+            }
+        }
+    });
 };
 
 // ==========================
@@ -288,6 +301,8 @@ const onFiltroChange = () => loadNiveles();
             </div>
         </div>
     </div>
+
+    <ConfirmDialog />
 
     <!-- ========================= -->
     <!-- DIALOG CREAR / EDITAR     -->

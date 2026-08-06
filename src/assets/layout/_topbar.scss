@@ -8,7 +8,11 @@
     top: 0;
     width: 100%;
     padding: 0 2rem;
-    background-color: var(--surface-card);
+    background: var(--sisa-glass-bg);
+    backdrop-filter: var(--sisa-glass-blur);
+    -webkit-backdrop-filter: var(--sisa-glass-blur);
+    border-bottom: 1px solid var(--sisa-glass-border);
+    box-shadow: 0 1px 20px rgba(0, 0, 0, 0.06);
     transition: left var(--layout-section-transition-duration);
     display: flex;
     align-items: center;
@@ -27,9 +31,15 @@
         color: var(--text-color);
         font-weight: 500;
         gap: 0.5rem;
+        transition: opacity var(--sisa-dur-fast) ease, transform var(--sisa-dur-fast) var(--sisa-ease-spring);
 
         svg {
             width: 3rem;
+        }
+
+        &:hover {
+            opacity: 0.85;
+            transform: scale(1.03);
         }
 
         &:focus-visible {
@@ -45,11 +55,21 @@
         width: 2.5rem;
         height: 2.5rem;
         color: var(--text-color);
-        transition: background-color var(--element-transition-duration);
         cursor: pointer;
+        transition:
+            background-color var(--sisa-dur-fast) ease,
+            color            var(--sisa-dur-fast) ease,
+            transform        var(--sisa-dur-fast) var(--sisa-ease-spring),
+            box-shadow       var(--sisa-dur-fast) ease;
 
         &:hover {
             background-color: var(--surface-hover);
+            color: var(--primary-color);
+            transform: scale(1.12);
+        }
+
+        &:active {
+            transform: scale(0.94);
         }
 
         &:focus-visible {
@@ -68,6 +88,11 @@
         &.layout-topbar-action-highlight {
             background-color: var(--primary-color);
             color: var(--primary-contrast-color);
+
+            &:hover {
+                color: var(--primary-contrast-color);
+                box-shadow: 0 4px 14px rgba(21, 101, 192, 0.35);
+            }
         }
     }
 
@@ -93,6 +118,14 @@
     .layout-config-menu {
         display: flex;
         gap: 1rem;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .layout-topbar-action,
+    .layout-topbar-logo {
+        transition: none !important;
+        transform: none !important;
     }
 }
 

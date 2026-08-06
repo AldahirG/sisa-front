@@ -115,13 +115,23 @@
                                 </tr>
                             </thead>
                             <tbody>
-                                <tr v-for="v in group.vacantes" :key="v.id_categoria">
+                                <tr v-for="v in group.vacantes" :key="v.id_categoria" :class="cupoRowClass(v)">
                                     <td>
                                         <span class="empresa-name">{{ v.empresa?.nombre ?? '—' }}</span>
                                     </td>
                                     <td>
                                         <span class="vac-nombre">{{ v.nombre }}</span>
                                         <span v-if="v.descripcion" class="vac-desc">{{ v.descripcion }}</span>
+                                        <div class="vac-meta">
+                                            <span class="vac-badge" :class="`vac-badge--${v.modalidad ?? 'presencial'}`">
+                                                <i :class="`pi ${v.modalidad === 'remoto' ? 'pi-home' : v.modalidad === 'hibrido' ? 'pi-sync' : 'pi-building'}`" />
+                                                {{ v.modalidad === 'remoto' ? 'Remoto' : v.modalidad === 'hibrido' ? 'Híbrido' : 'Presencial' }}
+                                            </span>
+                                            <span v-if="v.tiene_remuneracion" class="vac-badge vac-badge--rem">
+                                                <i class="pi pi-dollar" />
+                                                {{ v.monto_remuneracion != null ? v.monto_remuneracion.toLocaleString('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 }) : 'Remunerada' }}
+                                            </span>
+                                        </div>
                                     </td>
                                     <td>
                                         <div class="carreras-wrap">
@@ -130,10 +140,13 @@
                                         </div>
                                     </td>
                                     <td>
-                                        <Tag
-                                            :value="`${v.cupo_disponible ?? '?'} / ${v.cupo_total}`"
-                                            :severity="cupoSeverity(v)"
-                                        />
+                                        <div class="cupo-cell">
+                                            <span class="cupo-badge" :class="`cupo-badge--${cupoRowClass(v)}`">
+                                                <i :class="(v.cupo_disponible ?? 0) === 0 ? 'pi pi-ban' : (v.cupo_disponible ?? 0) === 1 ? 'pi pi-exclamation-circle' : 'pi pi-users'" />
+                                                {{ cupoLabel(v) }}
+                                            </span>
+                                            <span class="cupo-fraction">{{ v.cupo_disponible ?? 0 }} de {{ v.cupo_total }} lugares</span>
+                                        </div>
                                     </td>
                                     <td>
                                         <Tag
@@ -203,6 +216,16 @@
                     <label>Cupo total</label>
                     <InputNumber v-model="form.cupo_total" :min="1" show-buttons class="w-full" />
                 </div>
+                <div class="form-field">
+                    <label>Modalidad</label>
+                    <Select
+                        v-model="form.modalidad"
+                        :options="modalidadOpts"
+                        option-label="label"
+                        option-value="value"
+                        class="w-full"
+                    />
+                </div>
                 <div class="form-field form-field--full">
                     <label>Carreras permitidas</label>
                     <MultiSelect
@@ -219,6 +242,27 @@
                 <div class="form-field form-field--full">
                     <label>Descripción</label>
                     <Textarea v-model="form.descripcion" rows="3" class="w-full" />
+                </div>
+                <!-- Remuneración -->
+                <div class="form-field form-field--full">
+                    <div class="toggle-row">
+                        <div class="toggle-row__info">
+                            <span class="toggle-row__label">Remuneración económica</span>
+                            <span class="toggle-row__hint">¿Esta vacante ofrece pago al alumno?</span>
+                        </div>
+                        <ToggleSwitch v-model="form.tiene_remuneracion" />
+                    </div>
+                </div>
+                <div v-if="form.tiene_remuneracion" class="form-field">
+                    <label>Monto mensual (MXN)</label>
+                    <InputNumber
+                        v-model="form.monto_remuneracion"
+                        mode="currency"
+                        currency="MXN"
+                        locale="es-MX"
+                        :min="0"
+                        class="w-full"
+                    />
                 </div>
                 <div class="form-field form-field--full">
                     <label class="checkbox-label">
@@ -249,12 +293,19 @@
                     <label>Período destino</label>
                     <Select
                         v-model="dupForm.id_periodo_destino"
-                        :options="periodos"
+                        :options="periodosParaDuplicar"
                         option-label="nombre"
                         option-value="id_periodo"
                         placeholder="Selecciona período"
                         class="w-full"
-                    />
+                    >
+                        <template #option="{ option }">
+                            <div class="dup-periodo-opt">
+                                <span>{{ option.nombre }}</span>
+                                <span v-if="option.estado === 'activo'" class="dup-periodo-badge">● Activo</span>
+                            </div>
+                        </template>
+                    </Select>
                 </div>
                 <div class="form-field">
                     <label>Cupo (opcional)</label>
@@ -343,24 +394,42 @@
                     <table class="asign-table">
                         <thead>
                             <tr>
-                                <th>Alumno</th>
+                                <th>Matrícula</th>
+                                <th>Nombre</th>
+                                <th>Vacante</th>
                                 <th>Acción</th>
-                                <th>Empresa / Carrera</th>
                             </tr>
                         </thead>
                         <tbody>
-                            <tr v-for="d in autoAsignResult.detalle" :key="d.alumno_id">
-                                <td>{{ d.alumno_id }}</td>
+                            <tr v-for="d in autoAsignResult.detalle.slice(0, 10)" :key="d.alumno_id">
+                                <td class="mono">{{ d.matricula ?? d.alumno_id }}</td>
+                                <td>{{ d.nombre ?? '—' }}</td>
+                                <td class="td-empresa">
+                                    <span v-if="d.vacante_nombre">{{ d.vacante_nombre }}</span>
+                                    <span v-else-if="d.empresa" class="text-muted">{{ d.empresa }}</span>
+                                    <span v-else-if="d.carrera" class="text-muted">{{ d.carrera }}</span>
+                                    <span v-else>—</span>
+                                </td>
                                 <td>
                                     <Tag
                                         :value="accionLabel(d.accion)"
                                         :severity="accionSeverity(d.accion)"
                                     />
                                 </td>
-                                <td>{{ d.empresa ?? d.carrera ?? '—' }}</td>
                             </tr>
                         </tbody>
                     </table>
+                    <div v-if="autoAsignResult.detalle.length > 10" class="asign-more">
+                        <span>y {{ autoAsignResult.detalle.length - 10 }} más...</span>
+                        <RouterLink to="/admin/control-academico" class="asign-more-link" @click="closeAutoAsign">
+                            Ver todos en Control Académico →
+                        </RouterLink>
+                    </div>
+                    <div v-if="autoAsignResult.detalle.length <= 10 && autoAsignResult.detalle.length > 0" class="asign-more">
+                        <RouterLink to="/admin/control-academico" class="asign-more-link" @click="closeAutoAsign">
+                            Ver en Control Académico →
+                        </RouterLink>
+                    </div>
                 </div>
             </div>
             <template #footer>
@@ -392,7 +461,8 @@ import Tag from 'primevue/tag'
 import Toast from 'primevue/toast'
 import ConfirmDialog from 'primevue/confirmdialog'
 import Dialog from 'primevue/dialog'
-import { useToast } from 'primevue/usetoast'
+import ToggleSwitch from 'primevue/toggleswitch'
+import { useToast } from '@/composables/useAppToast'
 import { useConfirm } from 'primevue/useconfirm'
 
 const toast   = useToast()
@@ -431,9 +501,28 @@ const importForm = ref({ id_periodo: null, archivo: null })
 // ── Carreras (desde API /carreras, cacheado) ──────────
 const { carreras: carrerasCatalogo } = useCarreras()
 
+const modalidadOpts = [
+    { label: 'Presencial', value: 'presencial', icon: 'pi-building' },
+    { label: 'Remoto',     value: 'remoto',     icon: 'pi-home'     },
+    { label: 'Híbrido',    value: 'hibrido',    icon: 'pi-sync'     }
+]
+
+// Periodos disponibles para duplicar: excluye el origen, activo primero
+const periodosParaDuplicar = computed(() => {
+    const origenId = dupTarget.value?.periodo?.id_periodo ?? null
+    return [...periodos.value]
+        .filter(p => p.id_periodo !== origenId)
+        .sort((a, b) => {
+            if (a.estado === 'activo' && b.estado !== 'activo') return -1
+            if (b.estado === 'activo' && a.estado !== 'activo') return 1
+            return 0
+        })
+})
+
 // ── Computed ──────────────────────────────────────────
 const vacantesFiltered = computed(() => {
     let list = vacantes.value
+    if (filtroPeriodo.value) list = list.filter(v => v.periodo?.id_periodo === filtroPeriodo.value)
     if (filtroActiva.value !== null) list = list.filter(v => v.activa === filtroActiva.value)
     const q = filtroSearch.value.trim().toLowerCase()
     if (q) list = list.filter(v =>
@@ -479,7 +568,10 @@ function resetForm() {
         descripcion: '',
         cupo_total: 1,
         activa: true,
-        carreras: []
+        carreras: [],
+        modalidad: 'presencial',
+        tiene_remuneracion: false,
+        monto_remuneracion: null
     }
 }
 
@@ -491,8 +583,25 @@ function formatDate(d) {
 function cupoSeverity(v) {
     const disp = v.cupo_disponible ?? v.cupo_total
     if (disp === 0)  return 'danger'
+    if (disp === 1)  return 'danger'
     if (disp <= 2)   return 'warn'
     return 'success'
+}
+
+function cupoLabel(v) {
+    const disp = v.cupo_disponible ?? 0
+    if (disp === 0) return 'Completo'
+    if (disp === 1) return 'Último lugar'
+    if (disp <= 2)  return 'Quedan pocos'
+    return `${disp} disponibles`
+}
+
+function cupoRowClass(v) {
+    const disp = v.cupo_disponible ?? 0
+    if (disp === 0) return 'row-full'
+    if (disp === 1) return 'row-last'
+    if (disp <= 2)  return 'row-few'
+    return 'row-ok'
 }
 
 function toggleGroup(pid) {
@@ -515,7 +624,6 @@ async function loadVacantes() {
     loading.value = true
     try {
         const params = {}
-        if (filtroPeriodo.value) params.periodoId = filtroPeriodo.value
         if (filtroEmpresa.value) params.empresaId = filtroEmpresa.value
         const { data } = await api.get('/vacantes', { params })
         vacantes.value = Array.isArray(data) ? data : (data.vacantes ?? [])
@@ -552,14 +660,17 @@ function openCreateForPeriod(periodoId) {
 function openEdit(v) {
     isEdit.value = true
     form.value = {
-        id_categoria: v.id_categoria,
-        id_empresa:   v.empresa?.id_empresa ?? null,
-        id_periodo:   v.periodo?.id_periodo ?? null,
-        nombre:       v.nombre ?? '',
-        descripcion:  v.descripcion ?? '',
-        cupo_total:   v.cupo_total ?? 1,
-        activa:       v.activa ?? true,
-        carreras:     v.carreras ?? []
+        id_categoria:       v.id_categoria,
+        id_empresa:         v.empresa?.id_empresa ?? null,
+        id_periodo:         v.periodo?.id_periodo ?? null,
+        nombre:             v.nombre ?? '',
+        descripcion:        v.descripcion ?? '',
+        cupo_total:         v.cupo_total ?? 1,
+        activa:             v.activa ?? true,
+        carreras:           v.carreras ?? [],
+        modalidad:          v.modalidad ?? 'presencial',
+        tiene_remuneracion: !!v.tiene_remuneracion,
+        monto_remuneracion: v.monto_remuneracion != null ? parseFloat(v.monto_remuneracion) : null
     }
     formDialog.value = true
 }
@@ -571,11 +682,14 @@ async function saveVacante() {
     }
     saving.value = true
     try {
+        const payload = { ...form.value }
+        if (!payload.tiene_remuneracion || payload.monto_remuneracion == null) delete payload.monto_remuneracion
+
         if (isEdit.value) {
-            await api.put(`/vacantes/${form.value.id_categoria}`, form.value)
+            await api.put(`/vacantes/${payload.id_categoria}`, payload)
             toast.add({ severity: 'success', summary: 'Vacante actualizada', life: 3000 })
         } else {
-            await api.post('/vacantes', form.value)
+            await api.post('/vacantes', payload)
             toast.add({ severity: 'success', summary: 'Vacante creada', life: 3000 })
         }
         formDialog.value = false
@@ -619,9 +733,11 @@ async function eliminar(v) {
 }
 
 // ── Duplicate ─────────────────────────────────────────
-function openDuplicate(v) {
+async function openDuplicate(v) {
     dupTarget.value = v
-    dupForm.value = { id_periodo_destino: null, cupo_total: null, activa: true }
+    await loadCatalogos()   // refresca periodos para evitar nombre desactualizado
+    const activo = periodos.value.find(p => p.estado === 'activo' && p.id_periodo !== v.periodo?.id_periodo)
+    dupForm.value = { id_periodo_destino: activo?.id_periodo ?? null, cupo_total: null, activa: true }
     dupDialog.value = true
 }
 
@@ -631,15 +747,30 @@ async function duplicar() {
         return
     }
     saving.value = true
-    const body = { id_periodo_destino: dupForm.value.id_periodo_destino, activa: dupForm.value.activa }
+    const destPeriodoId = dupForm.value.id_periodo_destino
+    const body = { id_periodo_destino: destPeriodoId, activa: dupForm.value.activa }
     if (dupForm.value.cupo_total) body.cupo_total = dupForm.value.cupo_total
     try {
         await api.post(`/vacantes/${dupTarget.value.id_categoria}/duplicar`, body)
-        toast.add({ severity: 'success', summary: 'Vacante duplicada', life: 3000 })
+        const periodoNombre = periodos.value.find(p => p.id_periodo === destPeriodoId)?.nombre ?? 'el período destino'
+        toast.add({
+            severity: 'success',
+            summary: 'Vacante duplicada',
+            detail: dupForm.value.activa
+                ? `Activa en "${periodoNombre}". Viendo todas las vacantes de ese período.`
+                : `Creada como inactiva en "${periodoNombre}". Actívala cuando quieras publicarla.`,
+            life: 5000
+        })
         dupDialog.value = false
+        // Filtrar al periodo destino → el admin ve TODAS sus vacantes (no solo la recién duplicada)
+        filtroPeriodo.value = destPeriodoId
         await loadVacantes()
+        // Expandir el grupo destino (puede ser nuevo, no estaba en expandedGroups)
+        expandedGroups.value[destPeriodoId] = true
     } catch (e) {
-        toast.add({ severity: 'error', summary: 'Error', detail: e.response?.data?.message ?? 'Error al duplicar', life: 5000 })
+        const raw = e.response?.data?.message
+        const msg = Array.isArray(raw) ? raw[0] : (raw ?? 'Error al duplicar')
+        toast.add({ severity: 'error', summary: 'Error al duplicar', detail: msg, life: 6000 })
     } finally {
         saving.value = false
     }
@@ -694,11 +825,17 @@ function closeAutoAsign() {
 
 onMounted(async () => {
     await loadCatalogos()
+    const activo = periodos.value.find(p => p.estado === 'activo')
+    if (activo) filtroPeriodo.value = activo.id_periodo
     await loadVacantes()
 })
 </script>
 
 <style scoped>
+/* ── Duplicate dialog ────────────────────────────────── */
+.dup-periodo-opt { display: flex; align-items: center; gap: .5rem; justify-content: space-between; }
+.dup-periodo-badge { font-size: .72rem; font-weight: 600; color: var(--sisa-primary); background: var(--sisa-tint-1, #e8f5e9); padding: .1rem .45rem; border-radius: 99px; }
+
 /* ── Layout ─────────────────────────────────────────── */
 .vacantes-admin {
     padding: 1.5rem;
@@ -763,7 +900,7 @@ onMounted(async () => {
     background: var(--p-content-background);
     border: 1px solid var(--p-content-border-color);
     border-radius: .75rem;
-    overflow: hidden;
+    overflow: clip;
 }
 .period-group__header {
     display: flex;
@@ -799,8 +936,35 @@ onMounted(async () => {
     border-bottom: 1px solid var(--p-content-border-color);
     color: var(--p-text-color); vertical-align: middle;
 }
+/* Row color coding by availability */
+.vac-table tbody tr { border-left: 3px solid transparent; }
+.vac-table tbody tr.row-ok   { border-left-color: #16a34a; }
+.vac-table tbody tr.row-few  { border-left-color: #d97706; }
+.vac-table tbody tr.row-last { border-left-color: #dc2626; }
+.vac-table tbody tr.row-full {
+    border-left-color: #9ca3af;
+    opacity: 0.6;
+}
+.vac-table tbody tr.row-full td { color: var(--p-text-muted-color); }
+
 .vac-table tbody tr:last-child td { border-bottom: none; }
-.vac-table tbody tr:hover td { background: var(--p-surface-50, #f8fafc); }
+.vac-table tbody tr:not(.row-full):hover td { background: var(--p-surface-50, #f8fafc); }
+
+/* Cupo cell */
+.cupo-cell { display: flex; flex-direction: column; gap: .15rem; }
+.cupo-badge {
+    display: inline-flex; align-items: center; gap: .3rem;
+    font-size: .75rem; font-weight: 600; padding: .2rem .55rem;
+    border-radius: 999px; width: fit-content;
+}
+.cupo-badge--row-ok   { background: rgba(22,163,74,.12);  color: #16a34a; }
+.cupo-badge--row-few  { background: rgba(217,119,6,.12);  color: #d97706; }
+.cupo-badge--row-last { background: rgba(220,38,38,.12);  color: #dc2626; }
+.cupo-badge--row-full { background: rgba(156,163,175,.15); color: #6b7280; }
+.cupo-fraction {
+    font-size: .72rem; color: var(--p-text-muted-color);
+    padding-left: .1rem;
+}
 
 .empresa-name { font-weight: 600; }
 .vac-nombre { font-weight: 500; display: block; }
@@ -922,6 +1086,46 @@ onMounted(async () => {
 }
 .asign-table td { padding: .6rem .75rem; border-bottom: 1px solid var(--p-content-border-color); color: var(--p-text-color); }
 .asign-table tbody tr:last-child td { border-bottom: none; }
+.asign-table .mono { font-family: monospace; font-size: .8rem; }
+.asign-table .td-empresa { max-width: 160px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.asign-table .text-muted { color: var(--p-text-muted-color); }
+.asign-more { display: flex; align-items: center; justify-content: space-between; padding: .5rem .75rem; font-size: .82rem; color: var(--p-text-muted-color); border-top: 1px solid var(--p-content-border-color); }
+.asign-more-link { color: var(--sisa-primary-l); text-decoration: none; font-weight: 500; }
+.asign-more-link:hover { text-decoration: underline; }
+
+/* ── Vacante meta badges ─────────────────────────────── */
+.vac-meta {
+    display: flex; gap: .35rem; margin-top: .35rem; flex-wrap: wrap;
+}
+.vac-badge {
+    display: inline-flex; align-items: center; gap: .3rem;
+    font-size: .7rem; font-weight: 600; padding: .15rem .45rem;
+    border-radius: 999px;
+}
+.vac-badge--presencial {
+    background: var(--sisa-tint-blue, #e8f1fb); color: var(--sisa-icon-blue, #1c6aac);
+}
+.vac-badge--remoto {
+    background: var(--sisa-tint-purple, #f0eafa); color: var(--sisa-icon-purple, #7c3aed);
+}
+.vac-badge--hibrido {
+    background: var(--sisa-tint-amber, #fff8e1); color: var(--sisa-icon-amber, #b45309);
+}
+.vac-badge--rem {
+    background: var(--sisa-tint-green, #e6f4ea); color: var(--sisa-icon-green, #15803d);
+}
+
+/* ── Toggle row ──────────────────────────────────────── */
+.toggle-row {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 1rem; padding: .75rem 1rem;
+    background: var(--p-surface-50, #f8fafc);
+    border: 1px solid var(--p-content-border-color);
+    border-radius: .5rem;
+}
+.toggle-row__info { display: flex; flex-direction: column; gap: .15rem; }
+.toggle-row__label { font-size: .875rem; font-weight: 600; color: var(--p-text-color); }
+.toggle-row__hint { font-size: .78rem; color: var(--p-text-muted-color); }
 
 /* ── Responsive ──────────────────────────────────────── */
 @media (max-width: 640px) {

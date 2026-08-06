@@ -1,6 +1,6 @@
 <script setup>
 import api from '@/api/axios';
-import { useToast } from 'primevue/usetoast';
+import { useToast } from '@/composables/useAppToast';
 import { computed, onMounted, ref, nextTick } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
@@ -11,6 +11,7 @@ import Dialog from 'primevue/dialog';
 import InputText from 'primevue/inputtext';
 import ProgressBar from 'primevue/progressbar';
 import Tag from 'primevue/tag';
+import Textarea from 'primevue/textarea';
 import Toast from 'primevue/toast';
 import { useConfirm } from 'primevue/useconfirm';
 
@@ -23,6 +24,8 @@ const router  = useRouter();
 // STATE
 // =====================
 const entregables       = ref([]);
+const sinAsignacion     = ref(false);
+const sinPeriodo        = ref(false);
 const loading           = ref(false);
 const highlightId       = ref(null); // id del entregable resaltado desde calendar
 
@@ -31,6 +34,59 @@ const selectedEntregable = ref(null);
 const archivoUrl         = ref('');
 const submitting         = ref(false);
 
+// Modal de detalle + comentarios
+const showDetailModal       = ref(false);
+const detailEntregable      = ref(null);
+const detailComentarios     = ref([]);
+const loadingComentarios    = ref(false);
+const nuevoComentario       = ref('');
+const submittingComentario  = ref(false);
+
+const openDetailModal = async (ent) => {
+    detailEntregable.value = ent;
+    showDetailModal.value  = true;
+    nuevoComentario.value  = '';
+    detailComentarios.value = [];
+    if (ent.id_entrega) await loadComentarios(ent.id_entrega);
+};
+
+const loadComentarios = async (id_entrega) => {
+    loadingComentarios.value = true;
+    try {
+        const { data } = await api.get(`/entregables/entregas/${id_entrega}/comentarios`);
+        detailComentarios.value = data;
+    } catch {
+        detailComentarios.value = [];
+    } finally {
+        loadingComentarios.value = false;
+    }
+};
+
+const enviarComentario = async () => {
+    if (!nuevoComentario.value.trim()) return;
+    submittingComentario.value = true;
+    try {
+        await api.post(`/entregables/entregas/${detailEntregable.value.id_entrega}/comentarios`, {
+            contenido: nuevoComentario.value.trim()
+        });
+        nuevoComentario.value = '';
+        await loadComentarios(detailEntregable.value.id_entrega);
+    } catch {
+        toast.add({ severity: 'error', summary: 'Error', detail: 'No se pudo enviar el comentario', life: 3000 });
+    } finally {
+        submittingComentario.value = false;
+    }
+};
+
+const eliminarComentario = async (id_comentario) => {
+    try {
+        await api.delete(`/entregables/comentarios/${id_comentario}`);
+        await loadComentarios(detailEntregable.value.id_entrega);
+    } catch {
+        toast.add({ severity: 'error', summary: 'Error', detail: 'No se pudo eliminar el comentario', life: 3000 });
+    }
+};
+
 // =====================
 // LOAD (sin cambios)
 // =====================
@@ -38,7 +94,9 @@ const loadEntregables = async () => {
     loading.value = true;
     try {
         const { data } = await api.get('/entregables/me');
-        entregables.value = data ?? [];
+        sinAsignacion.value = data?.sin_asignacion ?? false;
+        sinPeriodo.value    = data?.sin_periodo   ?? false;
+        entregables.value   = data?.entregables   ?? [];
     } catch {
         toast.add({
             severity: 'error',
@@ -158,19 +216,20 @@ const enviarEntrega = async () => {
     submitting.value = true;
     try {
         await api.post(`/entregables/entregar/${selectedEntregable.value.id_entregable}`, { archivo_url: archivoUrl.value });
-
-        toast.add({
-            severity: 'success',
-            summary: 'Entrega enviada correctamente'
-        });
-
+        toast.add({ severity: 'success', summary: 'Entrega enviada correctamente' });
         showDialog.value = false;
         loadEntregables();
     } catch (e) {
+        const raw    = e.response?.data?.message;
+        const msg    = Array.isArray(raw) ? raw[0] : (raw || 'No se pudo enviar la entrega');
+        const status = e.response?.status;
+        // 409 = fecha no llegó (warn), 403 = sin empresa (warn), resto = error
+        const isWarn = status === 409 || status === 403;
         toast.add({
-            severity: 'error',
-            summary: 'Error',
-            detail: e.response?.data?.message || 'No se pudo enviar la entrega'
+            severity: isWarn ? 'warn' : 'error',
+            summary:  status === 409 ? 'No disponible aún' : status === 403 ? 'Sin empresa asignada' : 'Error',
+            detail:   msg,
+            life:     isWarn ? 6000 : 4000
         });
     } finally {
         submitting.value = false;
@@ -182,13 +241,15 @@ const enviarEntrega = async () => {
 // (solo visualización, no afectan lógica)
 // =====================
 
-/** Formatea fecha ISO a "22 de abril, 2026" */
+/** Formatea datetime ISO con hora: "22 de abril de 2026, 11:59 p. m." */
 const formatDate = (fechaStr) => {
     if (!fechaStr) return '—';
-    return new Date(fechaStr).toLocaleDateString('es-MX', {
+    return new Date(fechaStr).toLocaleString('es-MX', {
         day: 'numeric',
         month: 'long',
-        year: 'numeric'
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
     });
 };
 
@@ -295,20 +356,42 @@ const progreso = computed(() => {
             </div>
 
             <!-- ════════════════════════════════
+                 SIN PERIODO ACTIVO
+            ════════════════════════════════ -->
+            <div v-if="sinPeriodo" class="empty-state">
+                <div class="empty-icon-wrap" style="background: var(--sisa-tint-blue); color: var(--sisa-icon-blue);">
+                    <i class="pi pi-calendar"></i>
+                </div>
+                <p class="empty-title">Sin período activo</p>
+                <p class="empty-desc">No hay un período de prácticas activo en este momento. Estate atento al inicio del siguiente período.</p>
+            </div>
+
+            <!-- ════════════════════════════════
+                 SIN EMPRESA ASIGNADA
+            ════════════════════════════════ -->
+            <div v-else-if="sinAsignacion" class="empty-state">
+                <div class="empty-icon-wrap" style="background: var(--sisa-tint-amber); color: var(--sisa-icon-amber);">
+                    <i class="pi pi-building"></i>
+                </div>
+                <p class="empty-title">Aún no tienes empresa asignada</p>
+                <p class="empty-desc">Los entregables estarán disponibles una vez que el coordinador te asigne a una empresa en el periodo activo.</p>
+            </div>
+
+            <!-- ════════════════════════════════
                  SIN ENTREGABLES
             ════════════════════════════════ -->
-            <div v-if="entregables.length === 0" class="empty-state">
+            <div v-else-if="entregables.length === 0" class="empty-state">
                 <div class="empty-icon-wrap">
                     <i class="pi pi-inbox"></i>
                 </div>
-                <p class="empty-title">Sin entregables asignados</p>
-                <p class="empty-desc">No tienes entregables registrados para este periodo. Contacta a tu coordinador si crees que esto es un error.</p>
+                <p class="empty-title">Sin entregables disponibles</p>
+                <p class="empty-desc">No hay entregables publicados para este periodo todavía. Vuelve más tarde.</p>
             </div>
 
             <!-- ════════════════════════════════
                  GRID DE ENTREGABLES
             ════════════════════════════════ -->
-            <div v-else class="ent-grid">
+            <div v-else-if="entregables.length > 0" class="ent-grid">
                 <div
                     v-for="ent in entregables"
                     :key="ent.id_entregable"
@@ -316,21 +399,26 @@ const progreso = computed(() => {
                     class="ent-card"
                     :class="[urgencyClass(ent), { 'ent-card--highlight': highlightId === ent.id_entregable }]"
                 >
-                    <!-- Cabecera: estado + urgencia -->
+                    <!-- Cabecera: número + estado + urgencia -->
                     <div class="ent-card-top">
-                        <Tag
-                            :value="estadoLabel(ent)"
-                            :severity="estadoSeverity(ent)"
-                            class="estado-tag"
-                        />
-                        <span
-                            v-if="urgencyText(ent)"
-                            class="urgency-badge"
-                            :class="urgencyClass(ent)"
-                        >
-                            <i class="pi pi-clock"></i>
-                            {{ urgencyText(ent) }}
-                        </span>
+                        <div class="ent-card-top-left">
+                            <span class="ent-num-chip">#{{ ent.numero }}</span>
+                            <Tag
+                                :value="estadoLabel(ent)"
+                                :severity="estadoSeverity(ent)"
+                                class="estado-tag"
+                            />
+                        </div>
+                        <div class="ent-card-top-right">
+                            <span
+                                v-if="urgencyText(ent)"
+                                class="urgency-badge"
+                                :class="urgencyClass(ent)"
+                            >
+                                <i class="pi pi-clock"></i>
+                                {{ urgencyText(ent) }}
+                            </span>
+                        </div>
                     </div>
 
                     <!-- Nombre -->
@@ -351,16 +439,21 @@ const progreso = computed(() => {
                         </span>
                     </div>
 
-                    <!-- Calificación y observaciones (si evaluado) -->
+                    <!-- Calificación (si evaluado) -->
                     <div v-if="ent.calificacion !== null && ent.calificacion !== undefined" class="ent-grade">
                         <div class="grade-score">
                             <span class="grade-num">{{ ent.calificacion }}</span>
                             <span class="grade-label">/ 10</span>
                         </div>
-                        <p v-if="ent.observaciones" class="grade-obs">
-                            <i class="pi pi-comment obs-icon"></i>
-                            {{ ent.observaciones }}
+                    </div>
+
+                    <!-- Retroalimentación del coordinador (si existe, independiente de la calif) -->
+                    <div v-if="ent.observaciones" class="ent-feedback">
+                        <p class="feedback-label">
+                            <i class="pi pi-megaphone"></i>
+                            Retroalimentación del coordinador
                         </p>
+                        <p class="feedback-texto">{{ ent.observaciones }}</p>
                     </div>
 
                     <!-- Archivo entregado (si existe) -->
@@ -377,6 +470,17 @@ const progreso = computed(() => {
 
                     <!-- Acciones -->
                     <div class="ent-card-footer">
+                        <!-- Ver detalles (siempre visible) -->
+                        <Button
+                            label="Ver detalles"
+                            icon="pi pi-file-check"
+                            outlined
+                            size="small"
+                            severity="secondary"
+                            class="upload-btn detail-btn-footer"
+                            @click="openDetailModal(ent)"
+                        />
+
                         <!-- INC-11: puede subir o MODIFICAR si plazo vigente -->
                         <Button
                             v-if="canUpload(ent) && ent.estado === 'entregado'"
@@ -434,6 +538,150 @@ const progreso = computed(() => {
                 </div>
             </div>
         </template>
+
+        <!-- ════════════════════════════════
+             DIALOG — DETALLE ENTREGABLE
+        ════════════════════════════════ -->
+        <Dialog
+            v-model:visible="showDetailModal"
+            :header="`${detailEntregable?.numero ? '#' + detailEntregable.numero + ' — ' : ''}${detailEntregable?.nombre ?? ''}`"
+            modal
+            :style="{ width: '540px', maxWidth: '95vw' }"
+            :breakpoints="{ '640px': '98vw', '960px': '85vw' }"
+        >
+            <div class="detail-body" v-if="detailEntregable">
+                <!-- Estado + urgencia -->
+                <div class="detail-status-row">
+                    <Tag :value="estadoLabel(detailEntregable)" :severity="estadoSeverity(detailEntregable)" />
+                    <span v-if="urgencyText(detailEntregable)" class="urgency-badge" :class="urgencyClass(detailEntregable)">
+                        <i class="pi pi-clock"></i> {{ urgencyText(detailEntregable) }}
+                    </span>
+                </div>
+
+                <!-- Descripción -->
+                <div v-if="detailEntregable.descripcion" class="detail-section">
+                    <p class="detail-label"><i class="pi pi-align-left"></i> Descripción</p>
+                    <p class="detail-desc">{{ detailEntregable.descripcion }}</p>
+                </div>
+
+                <!-- Fechas con hora exacta -->
+                <div class="detail-section detail-dates-grid">
+                    <div v-if="detailEntregable.fecha_inicio" class="detail-date-box">
+                        <i class="pi pi-calendar-plus detail-date-icon"></i>
+                        <div>
+                            <p class="detail-label">Disponible desde</p>
+                            <p class="detail-date-val">{{ formatDate(detailEntregable.fecha_inicio) }}</p>
+                        </div>
+                    </div>
+                    <div class="detail-date-box" :class="{ 'detail-date-expired': isExpired(detailEntregable.fecha_limite) }">
+                        <i class="pi pi-calendar-times detail-date-icon"></i>
+                        <div>
+                            <p class="detail-label">Fecha límite</p>
+                            <p class="detail-date-val">{{ formatDate(detailEntregable.fecha_limite) }}</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Calificación -->
+                <div v-if="detailEntregable.calificacion !== null && detailEntregable.calificacion !== undefined" class="detail-section detail-grade-box">
+                    <div class="detail-grade-score">
+                        <span class="grade-num">{{ detailEntregable.calificacion }}</span>
+                        <span class="grade-label">/ 10</span>
+                    </div>
+                </div>
+
+                <!-- Retroalimentación (independiente de si hay calificación) -->
+                <div v-if="detailEntregable.observaciones" class="detail-section detail-feedback-box">
+                    <p class="detail-label">
+                        <i class="pi pi-megaphone"></i>
+                        Retroalimentación del coordinador
+                    </p>
+                    <p class="detail-feedback-texto">{{ detailEntregable.observaciones }}</p>
+                </div>
+
+                <!-- Archivo entregado -->
+                <div v-if="detailEntregable.archivo_url" class="detail-section">
+                    <p class="detail-label"><i class="pi pi-paperclip"></i> Archivo entregado</p>
+                    <a :href="detailEntregable.archivo_url" target="_blank" rel="noopener noreferrer" class="file-link">
+                        <i class="pi pi-external-link"></i> Ver archivo
+                    </a>
+                </div>
+
+                <!-- Comentarios (solo si hay entrega) -->
+                <div v-if="detailEntregable.id_entrega" class="detail-section detail-comments">
+                    <p class="detail-label"><i class="pi pi-comments"></i> Comentarios</p>
+
+                    <!-- Lista -->
+                    <div v-if="loadingComentarios" class="comments-loading">
+                        <i class="pi pi-spin pi-spinner"></i> Cargando…
+                    </div>
+                    <div v-else-if="detailComentarios.length === 0" class="comments-empty">
+                        Sin comentarios aún.
+                    </div>
+                    <div v-else class="comments-list">
+                        <div
+                            v-for="c in detailComentarios"
+                            :key="c.id_comentario"
+                            class="comment-item"
+                            :class="{ 'comment-mine': c.autor.rol === 'alumno', 'comment-admin': c.autor.rol === 'admin' }"
+                        >
+                            <div class="comment-header">
+                                <span class="comment-autor">
+                                    <i class="pi" :class="c.autor.rol === 'admin' ? 'pi-shield' : 'pi-user'"></i>
+                                    {{ c.autor.nombre }}
+                                </span>
+                                <div class="comment-header-right">
+                                    <span class="comment-fecha">
+                                        {{ new Date(c.fecha).toLocaleString('es-MX', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' }) }}
+                                    </span>
+                                    <Button
+                                        v-if="c.autor.rol === 'alumno'"
+                                        icon="pi pi-trash"
+                                        text
+                                        rounded
+                                        size="small"
+                                        severity="danger"
+                                        class="comment-delete-btn"
+                                        @click="eliminarComentario(c.id_comentario)"
+                                    />
+                                </div>
+                            </div>
+                            <p class="comment-texto">{{ c.contenido }}</p>
+                        </div>
+                    </div>
+
+                    <!-- Nuevo comentario -->
+                    <div class="comment-new">
+                        <Textarea
+                            v-model="nuevoComentario"
+                            placeholder="Escribe un comentario…"
+                            rows="2"
+                            autoResize
+                            class="w-full comment-textarea"
+                            @keydown.ctrl.enter="enviarComentario"
+                        />
+                        <Button
+                            label="Enviar"
+                            icon="pi pi-send"
+                            size="small"
+                            :loading="submittingComentario"
+                            :disabled="!nuevoComentario.trim()"
+                            @click="enviarComentario"
+                        />
+                    </div>
+                </div>
+            </div>
+
+            <template #footer>
+                <Button label="Cerrar" text severity="secondary" @click="showDetailModal = false" />
+                <Button
+                    v-if="canUpload(detailEntregable)"
+                    :label="detailEntregable?.estado === 'entregado' ? 'Modificar entrega' : 'Subir entregable'"
+                    :icon="detailEntregable?.estado === 'entregado' ? 'pi pi-pencil' : 'pi pi-upload'"
+                    @click="showDetailModal = false; abrirDialogo(detailEntregable)"
+                />
+            </template>
+        </Dialog>
 
         <!-- ════════════════════════════════
              DIALOG — SUBIR ENTREGABLE
@@ -549,11 +797,13 @@ const progreso = computed(() => {
 .progress-card {
     background: var(--surface-card);
     border: 1px solid var(--sisa-border);
+    border-left: 4px solid var(--sisa-primary-l);
     border-radius: 12px;
     padding: 1.25rem 1.375rem;
     display: flex;
     flex-direction: column;
     gap: 0.875rem;
+    box-shadow: 0 2px 12px rgba(15, 60, 97, 0.06);
 }
 
 .progress-info {
@@ -713,6 +963,29 @@ const progreso = computed(() => {
     flex-wrap: wrap;
 }
 
+.ent-card-top-left {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+}
+
+/* Número del entregable */
+.ent-num-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--surface-ground);
+    border: 1px solid var(--sisa-border);
+    color: var(--text-color-secondary);
+    font-size: 0.68rem;
+    font-weight: 800;
+    padding: 0.1rem 0.45rem;
+    border-radius: 0.35rem;
+    letter-spacing: 0.02em;
+    flex-shrink: 0;
+}
+
 .estado-tag { font-size: 0.75rem; }
 
 /* Badge de urgencia */
@@ -778,9 +1051,9 @@ const progreso = computed(() => {
 .ent-grade {
     background: var(--sisa-tint-green);
     border-radius: 8px;
-    padding: 0.75rem;
+    padding: 0.625rem 0.75rem;
     display: flex;
-    flex-direction: column;
+    align-items: center;
     gap: 0.375rem;
 }
 
@@ -804,21 +1077,36 @@ const progreso = computed(() => {
     opacity: 0.8;
 }
 
-.grade-obs {
-    font-size: 0.8rem;
-    color: var(--text-color-secondary);
-    margin: 0;
-    line-height: 1.4;
+/* Retroalimentación del coordinador — sección propia, destaca */
+.ent-feedback {
+    background: var(--sisa-tint-blue);
+    border: 1px solid var(--sisa-icon-blue, #1c6aac);
+    border-left: 4px solid var(--sisa-icon-blue, #1c6aac);
+    border-radius: 8px;
+    padding: 0.75rem;
     display: flex;
-    align-items: flex-start;
+    flex-direction: column;
     gap: 0.375rem;
 }
 
-.obs-icon {
-    flex-shrink: 0;
-    margin-top: 2px;
-    color: var(--sisa-icon-green);
-    opacity: 0.7;
+.feedback-label {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.7rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--sisa-icon-blue, #1c6aac);
+    margin: 0;
+}
+
+.feedback-texto {
+    font-size: 0.83rem;
+    color: var(--text-color);
+    margin: 0;
+    line-height: 1.5;
+    white-space: pre-wrap;
 }
 
 /* Link de archivo */
@@ -964,6 +1252,258 @@ const progreso = computed(() => {
     height: 2.625rem;
 }
 
+/* ════════════════════════════════════════
+   CARD TOP
+════════════════════════════════════════ */
+.ent-card-top-right {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+/* Botón "Ver detalles" en footer */
+.detail-btn-footer {
+    background: transparent !important;
+    border-color: var(--sisa-border) !important;
+    color: var(--text-color-secondary) !important;
+    box-shadow: none !important;
+    font-size: 0.8rem !important;
+    transform: none !important;
+    opacity: 0.85;
+}
+.detail-btn-footer:hover {
+    opacity: 1;
+    background: var(--surface-ground) !important;
+    transform: none !important;
+}
+
+/* ════════════════════════════════════════
+   DIALOG — DETALLE ENTREGABLE
+════════════════════════════════════════ */
+.detail-body {
+    display: flex;
+    flex-direction: column;
+    gap: 1.125rem;
+    padding: 0.25rem 0;
+}
+
+.detail-status-row {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    flex-wrap: wrap;
+}
+
+.detail-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+}
+
+.detail-label {
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-color-secondary);
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+}
+
+.detail-desc {
+    font-size: 0.875rem;
+    color: var(--text-color);
+    margin: 0;
+    line-height: 1.5;
+    background: var(--surface-ground);
+    padding: 0.625rem 0.75rem;
+    border-radius: 6px;
+    border: 1px solid var(--sisa-border);
+}
+
+.detail-dates-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+}
+
+.detail-date-box {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.625rem;
+    padding: 0.75rem;
+    background: var(--surface-ground);
+    border: 1px solid var(--sisa-border);
+    border-radius: 8px;
+}
+
+.detail-date-box.detail-date-expired {
+    background: var(--sisa-tint-red);
+    border-color: var(--sisa-icon-red);
+}
+
+.detail-date-icon {
+    font-size: 1rem;
+    color: var(--text-color-secondary);
+    margin-top: 2px;
+    flex-shrink: 0;
+}
+
+.detail-date-expired .detail-date-icon {
+    color: var(--sisa-icon-red);
+}
+
+.detail-date-val {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--text-color);
+    margin: 0;
+    line-height: 1.35;
+}
+
+.detail-date-expired .detail-date-val {
+    color: var(--sisa-icon-red);
+}
+
+.detail-grade-box {
+    background: var(--sisa-tint-green);
+    border-radius: 8px;
+    padding: 0.75rem 0.875rem;
+    gap: 0.5rem;
+    flex-direction: row;
+    align-items: center;
+}
+
+.detail-grade-score {
+    display: flex;
+    align-items: baseline;
+    gap: 0.25rem;
+}
+
+/* Feedback box en el modal */
+.detail-feedback-box {
+    background: var(--sisa-tint-blue);
+    border: 1px solid var(--sisa-icon-blue, #1c6aac);
+    border-left: 4px solid var(--sisa-icon-blue, #1c6aac);
+    border-radius: 8px;
+    padding: 0.875rem;
+    gap: 0.5rem;
+}
+
+.detail-feedback-texto {
+    font-size: 0.875rem;
+    color: var(--text-color);
+    margin: 0;
+    line-height: 1.5;
+    white-space: pre-wrap;
+}
+
+/* ════════════════════════════════════════
+   COMENTARIOS EN MODAL
+════════════════════════════════════════ */
+.detail-comments {
+    background: var(--surface-ground);
+    border: 1px solid var(--sisa-border);
+    border-radius: 10px;
+    padding: 1rem;
+    gap: 0.75rem;
+}
+
+.comments-loading,
+.comments-empty {
+    font-size: 0.82rem;
+    color: var(--text-color-secondary);
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.25rem 0;
+}
+
+.comments-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    max-height: 240px;
+    overflow-y: auto;
+}
+
+.comment-item {
+    padding: 0.625rem 0.75rem;
+    border-radius: 8px;
+    background: var(--surface-card);
+    border: 1px solid var(--sisa-border);
+}
+
+.comment-item.comment-admin {
+    border-left: 3px solid var(--sisa-primary);
+    background: var(--sisa-tint-blue);
+}
+
+.comment-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-bottom: 0.25rem;
+}
+
+.comment-header-right {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.comment-autor {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--text-color);
+}
+
+.comment-fecha {
+    font-size: 0.7rem;
+    color: var(--text-color-secondary);
+}
+
+.comment-delete-btn {
+    opacity: 0;
+    transition: opacity 0.15s;
+    width: 1.5rem !important;
+    height: 1.5rem !important;
+}
+.comment-item:hover .comment-delete-btn {
+    opacity: 0.7;
+}
+.comment-delete-btn:hover {
+    opacity: 1 !important;
+}
+
+.comment-texto {
+    font-size: 0.82rem;
+    color: var(--text-color);
+    margin: 0;
+    line-height: 1.45;
+    white-space: pre-wrap;
+}
+
+.comment-new {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    border-top: 1px solid var(--sisa-border);
+    padding-top: 0.75rem;
+    margin-top: 0.25rem;
+}
+
+.comment-textarea {
+    font-size: 0.85rem;
+    border-radius: 8px;
+}
+
 /* Card resaltada desde el calendario */
 @keyframes highlight-pulse {
     0%   { box-shadow: 0 0 0 0 rgba(21, 101, 192, 0.5); }
@@ -977,9 +1517,26 @@ const progreso = computed(() => {
 }
 
 /* ════════════════════════════════════════
-   RESPONSIVE
+   RESPONSIVE — TABLET
 ════════════════════════════════════════ */
-@media (max-width: 600px) {
+@media (max-width: 768px) {
+    .ent-grid {
+        grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    }
+
+    .detail-dates-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* ════════════════════════════════════════
+   RESPONSIVE — MOBILE
+════════════════════════════════════════ */
+@media (max-width: 576px) {
+    .entregables-page {
+        gap: 1rem;
+    }
+
     .ent-grid {
         grid-template-columns: 1fr;
     }
@@ -989,8 +1546,30 @@ const progreso = computed(() => {
         gap: 0.75rem;
     }
 
-    .progress-main {
+    .progress-chips {
         flex-wrap: wrap;
+    }
+
+    .progress-fraction strong {
+        font-size: 1.6rem;
+    }
+
+    .ent-card-footer {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    .upload-btn {
+        width: 100%;
+    }
+
+    .detail-dates-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .detail-body {
+        gap: 0.875rem;
     }
 }
 </style>

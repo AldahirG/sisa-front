@@ -8,7 +8,7 @@ import Button from 'primevue/button';
 import ProgressBar from 'primevue/progressbar';
 import Tag from 'primevue/tag';
 import Toast from 'primevue/toast';
-import { useToast } from 'primevue/usetoast';
+import { useToast } from '@/composables/useAppToast';
 
 const router = useRouter();
 const auth   = useAuthStore();
@@ -87,12 +87,14 @@ const empresa    = computed(() => asignacion.value ?? null);
 const empresaLabel   = computed(() => asignacion.value?.empresa ?? 'Pendiente');
 const empresaPending = computed(() => !asignacion.value);
 
-/** Encuesta — el back devuelve un boolean plano */
+/** Encuesta — todas completadas */
 const encuestaCompletada = computed(() => dash.value?.encuesta_completada ?? false);
 
 /** Liberado */
-const liberado = computed(() => dash.value?.liberado ?? false);
+const liberado      = computed(() => dash.value?.liberado ?? false);
 const promedioFinal = computed(() => dash.value?.promedio_final ?? null);
+const promedioOculto = computed(() => dash.value?.promedio_oculto ?? false);
+const reprobado     = computed(() => dash.value?.reprobado ?? false);
 
 // ════════════════════════════════
 // JOURNEY — 5 etapas dinámicas
@@ -245,6 +247,25 @@ const statusItems = computed(() => {
                 />
             </div>
 
+            <!-- Banner promedio bloqueado -->
+            <div v-if="promedioOculto" class="dash-alert dash-alert--lock">
+                <i class="pi pi-lock dash-alert-icon"></i>
+                <div>
+                    <strong>Tu calificación está bloqueada</strong>
+                    <p>Contesta todas las encuestas activas de tu semestre para desbloquear tu promedio y poder ser liberado.</p>
+                </div>
+                <Button label="Ir a encuestas" icon="pi pi-clipboard" size="small" severity="secondary" outlined @click="$router.push('/alumno/encuesta')" />
+            </div>
+
+            <!-- Banner reprobado -->
+            <div v-if="reprobado" class="dash-alert dash-alert--reprobado">
+                <i class="pi pi-exclamation-triangle dash-alert-icon"></i>
+                <div>
+                    <strong>Calificación no aprobatoria: {{ promedioFinal }}</strong>
+                    <p>No alcanzaste el mínimo de 7.0. Acércate con tu coordinador para recibir orientación sobre los siguientes pasos.</p>
+                </div>
+            </div>
+
             <!-- KPI CARDS -->
             <div class="kpi-row">
                 <!-- Empresa -->
@@ -277,26 +298,41 @@ const statusItems = computed(() => {
                 </div>
 
                 <!-- Promedio -->
-                <div class="kpi-card">
+                <div class="kpi-card" :class="reprobado ? 'kpi-card--reprobado' : ''">
                     <div class="kpi-inner">
-                        <span class="kpi-label">Promedio actual</span>
-                        <div class="kpi-icon-wrap kpi-icon-purple">
-                            <i class="pi pi-star"></i>
+                        <span class="kpi-label">{{ reprobado ? 'Calificación final' : 'Promedio actual' }}</span>
+                        <div class="kpi-icon-wrap" :class="reprobado ? 'kpi-icon-red' : 'kpi-icon-purple'">
+                            <i :class="promedioOculto ? 'pi pi-lock' : reprobado ? 'pi pi-times-circle' : 'pi pi-star'"></i>
                         </div>
                     </div>
-                    <div class="kpi-value">
-                        <template v-if="promedioFinal !== null">
-                            {{ promedioFinal }}
-                            <span class="kpi-total">final</span>
-                        </template>
-                        <template v-else-if="ent.promedio_actual !== null && ent.promedio_actual !== undefined">
-                            {{ ent.promedio_actual }}
-                        </template>
-                        <template v-else>
-                            <span class="kpi-value--pending">—</span>
-                        </template>
-                    </div>
-                    <span class="kpi-hint">{{ promedioFinal !== null ? 'Promedio final calculado' : 'Basado en entregables evaluados' }}</span>
+                    <!-- Promedio oculto hasta contestar encuestas -->
+                    <template v-if="promedioOculto">
+                        <div class="kpi-value kpi-value--locked">
+                            <i class="pi pi-lock" style="font-size:1.4rem"></i>
+                        </div>
+                        <span class="kpi-hint kpi-hint--lock">Contesta todas las encuestas para desbloquear</span>
+                    </template>
+                    <!-- Reprobado -->
+                    <template v-else-if="reprobado">
+                        <div class="kpi-value kpi-value--reprobado">{{ promedioFinal }}</div>
+                        <span class="kpi-hint kpi-hint--reprobado">Calificación no aprobatoria · Contacta a coordinación</span>
+                    </template>
+                    <!-- Normal -->
+                    <template v-else>
+                        <div class="kpi-value">
+                            <template v-if="promedioFinal !== null">
+                                {{ promedioFinal }}
+                                <span class="kpi-total">final</span>
+                            </template>
+                            <template v-else-if="ent.promedio_actual !== null && ent.promedio_actual !== undefined">
+                                {{ ent.promedio_actual }}
+                            </template>
+                            <template v-else>
+                                <span class="kpi-value--pending">—</span>
+                            </template>
+                        </div>
+                        <span class="kpi-hint">{{ promedioFinal !== null ? 'Promedio final calculado' : 'Basado en entregables evaluados' }}</span>
+                    </template>
                 </div>
 
                 <!-- Avance general -->
@@ -350,6 +386,14 @@ const statusItems = computed(() => {
                         <template v-if="liberado">
                             ¡Felicidades! Has completado exitosamente tu periodo de prácticas profesionales.
                             Tu promedio final es <strong>{{ promedioFinal }}</strong>.
+                        </template>
+                        <template v-else-if="reprobado">
+                            Tu calificación final es <strong>{{ promedioFinal }}</strong>, la cual no alcanza el mínimo aprobatorio de <strong>7.0</strong>.
+                            Por favor acércate con tu coordinador para recibir orientación sobre los siguientes pasos.
+                        </template>
+                        <template v-else-if="promedioOculto">
+                            Has completado tus entregables. Para ver tu calificación y proceder a la liberación,
+                            <strong>debes contestar todas las encuestas activas de tu semestre.</strong>
                         </template>
                         <template v-else>
                             Te encuentras registrado en el periodo actual de prácticas profesionales.
@@ -516,12 +560,58 @@ const statusItems = computed(() => {
 .kpi-icon-amber  { background: var(--sisa-tint-amber);  color: var(--sisa-icon-amber);  }
 .kpi-icon-green  { background: var(--sisa-tint-green);  color: var(--sisa-icon-green);  }
 .kpi-icon-purple { background: var(--sisa-tint-purple); color: var(--sisa-icon-purple); }
+.kpi-icon-red    { background: var(--sisa-tint-red);    color: var(--sisa-icon-red);    }
 
 .kpi-value { font-size: 1.5rem; font-weight: 700; color: var(--text-color); line-height: 1; }
-.kpi-value--pending { color: var(--text-color-secondary); font-style: italic; font-size: 1.1rem; }
+.kpi-value--pending  { color: var(--text-color-secondary); font-style: italic; font-size: 1.1rem; }
+.kpi-value--locked   { color: var(--text-color-secondary); opacity: 0.5; }
+.kpi-value--reprobado { color: var(--sisa-icon-red); }
+.kpi-card--reprobado { border-color: var(--sisa-icon-red) !important; }
 .kpi-total   { font-size: 1rem;  color: var(--text-color-secondary); font-weight: 400; }
 .kpi-percent { font-size: 1rem;  color: var(--text-color-secondary); font-weight: 500; }
 .kpi-hint    { font-size: 0.78rem; color: var(--text-color-secondary); }
+.kpi-hint--lock     { font-size: 0.78rem; color: var(--sisa-icon-amber); font-weight: 500; }
+.kpi-hint--reprobado { font-size: 0.78rem; color: var(--sisa-icon-red); font-weight: 500; }
+
+/* ── Banners de alerta ───────────────────── */
+.dash-alert {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.875rem;
+    padding: 1rem 1.25rem;
+    border-radius: 12px;
+    border: 1px solid;
+    margin-bottom: 0.5rem;
+}
+.dash-alert--lock {
+    background: #fffbeb;
+    border-color: #fde68a;
+}
+.dash-alert--reprobado {
+    background: #fef2f2;
+    border-color: #fecaca;
+}
+.dash-alert-icon {
+    font-size: 1.35rem;
+    flex-shrink: 0;
+    margin-top: 0.1rem;
+}
+.dash-alert--lock .dash-alert-icon { color: #d97706; }
+.dash-alert--reprobado .dash-alert-icon { color: var(--sisa-icon-red); }
+.dash-alert strong { font-size: 0.925rem; display: block; margin-bottom: 0.2rem; }
+.dash-alert--lock strong { color: #92400e; }
+.dash-alert--reprobado strong { color: #991b1b; }
+.dash-alert p { font-size: 0.825rem; margin: 0; color: var(--text-color-secondary); line-height: 1.5; }
+@media (prefers-color-scheme: dark) {
+    .dash-alert--lock { background: #1c1500; border-color: #78350f; }
+    .dash-alert--lock strong { color: #fbbf24; }
+    .dash-alert--reprobado { background: #1a0000; border-color: #7f1d1d; }
+    .dash-alert--reprobado strong { color: #fca5a5; }
+}
+:root[data-theme="dark"] .dash-alert--lock { background: #1c1500; border-color: #78350f; }
+:root[data-theme="dark"] .dash-alert--lock strong { color: #fbbf24; }
+:root[data-theme="dark"] .dash-alert--reprobado { background: #1a0000; border-color: #7f1d1d; }
+:root[data-theme="dark"] .dash-alert--reprobado strong { color: #fca5a5; }
 
 .kpi-progress { height: 6px; border-radius: 99px; }
 :deep(.kpi-progress .p-progressbar-value) {

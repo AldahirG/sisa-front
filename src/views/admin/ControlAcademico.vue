@@ -7,7 +7,7 @@ import Dialog from 'primevue/dialog';
 import InputText from 'primevue/inputtext';
 import Select from 'primevue/select';
 import Tag from 'primevue/tag';
-import { useToast } from 'primevue/usetoast';
+import { useToast } from '@/composables/useAppToast';
 import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
@@ -27,6 +27,11 @@ const loadingAvanzar = ref(false);
 const showAvanzarDialog = ref(false);
 const showResultadosDialog = ref(false);
 const resultadosAvanzar = ref(null);
+
+// Recalcular liberaciones
+const loadingRecalcular = ref(false);
+const showRecalcularResult = ref(false);
+const resultadoRecalcular = ref(null);
 
 const filtros = ref({
     periodo: null,
@@ -50,6 +55,9 @@ const loadAlumnos = async () => {
 const loadPeriodos = async () => {
     const { data } = await api.get('/periodos');
     periodos.value = data ?? [];
+    // Default to active period
+    const activo = periodos.value.find((p) => p.estado === 'activo');
+    if (activo) filtros.value.periodo = activo;
 };
 
 onMounted(async () => {
@@ -93,13 +101,14 @@ const alumnosFiltrados = computed(() => {
 // SUMMARY BADGES
 // ==========================
 const summaryStats = computed(() => {
-    const total = alumnos.value.length;
-    const asignados = alumnos.value.filter(
-        (a) => a.asignacion_estado === 'ACEPTADO' || a.asignacion_estado === 'POSTULADO'
-    ).length;
-    const sinAsignar = alumnos.value.filter((a) => !a.asignacion_estado || a.asignacion_estado === 'SIN_ASIGNAR').length;
-    const conBaja = alumnos.value.filter((a) => a.alumno?.estado === 'baja').length;
-    return { total, asignados, sinAsignar, conBaja };
+    const src = filtros.value.periodo
+        ? alumnos.value.filter((a) => a.periodo?.id_periodo === filtros.value.periodo.id_periodo)
+        : alumnos.value;
+    const total     = src.length;
+    const asignados = src.filter((a) => a.asignacion_estado === 'ASIGNADO').length;
+    const liberados = src.filter((a) => a.asignacion_estado === 'LIBERADO').length;
+    const conBaja   = src.filter((a) => a.asignacion_estado === 'BAJA').length;
+    return { total, asignados, liberados, conBaja };
 });
 
 // ==========================
@@ -146,6 +155,29 @@ const confirmarCerrarPostulaciones = async () => {
     }
 };
 
+const recalcularLiberaciones = async () => {
+    if (!periodoActivo.value) {
+        toast.add({ severity: 'warn', summary: 'Sin período activo', life: 4000 });
+        return;
+    }
+    loadingRecalcular.value = true;
+    try {
+        const { data } = await api.post(`/entregables/recalcular-liberaciones/${periodoActivo.value.id_periodo}`);
+        resultadoRecalcular.value = data;
+        showRecalcularResult.value = true;
+        await loadAlumnos();
+        if (data.liberados > 0) {
+            toast.add({ severity: 'success', summary: `${data.liberados} alumno(s) liberado(s)`, life: 4000 });
+        } else {
+            toast.add({ severity: 'info', summary: 'Sin cambios — ningún alumno cumple todos los requisitos aún', life: 4000 });
+        }
+    } catch (err) {
+        toast.add({ severity: 'error', summary: 'Error al recalcular', detail: err.response?.data?.message ?? 'Error inesperado', life: 4000 });
+    } finally {
+        loadingRecalcular.value = false;
+    }
+};
+
 const confirmarAvanzarPracticas = async () => {
     if (!periodoActivo.value) {
         toast.add({
@@ -180,23 +212,23 @@ const confirmarAvanzarPracticas = async () => {
 // UI HELPERS
 // ==========================
 const asignacionSeverity = (estado) => {
-    if (estado === 'ACEPTADO') return 'success';
-    if (estado === 'POSTULADO') return 'info';
-    if (estado === 'RECHAZADO') return 'danger';
+    if (estado === 'ASIGNADO') return 'success';
+    if (estado === 'LIBERADO') return 'info';
+    if (estado === 'BAJA')     return 'danger';
     return 'secondary';
 };
 
 const asignacionLabel = (estado) => {
-    if (!estado || estado === 'SIN_ASIGNAR') return 'Sin asignar';
-    return estado.charAt(0) + estado.slice(1).toLowerCase();
+    if (estado === 'ASIGNADO') return 'Asignado';
+    if (estado === 'LIBERADO') return 'Liberado';
+    if (estado === 'BAJA')     return 'Baja';
+    return 'Sin datos';
 };
 
-const entregablesProgress = (row) => {
-    const entregables = row.entregables ?? [];
-    const total = entregables.length;
-    const entregados = entregables.filter((e) => e.calificacion !== null && e.calificacion !== undefined).length;
-    return { total, entregados };
-};
+const entregablesProgress = (row) => ({
+    total:      row.entregables_count    ?? 0,
+    entregados: row.entregables_enviadas ?? 0,
+});
 
 const progressPct = (row) => {
     const { total, entregados } = entregablesProgress(row);
@@ -232,14 +264,25 @@ const progressPct = (row) => {
                         <span class="badge-lbl">Asignados</span>
                     </div>
                     <div class="badge badge-amber">
-                        <span class="badge-num">{{ summaryStats.sinAsignar }}</span>
-                        <span class="badge-lbl">Sin asignar</span>
+                        <span class="badge-num">{{ summaryStats.liberados }}</span>
+                        <span class="badge-lbl">Liberados</span>
                     </div>
                     <div class="badge badge-red">
                         <span class="badge-num">{{ summaryStats.conBaja }}</span>
                         <span class="badge-lbl">Baja</span>
                     </div>
                 </div>
+                <Button
+                    icon="pi pi-sync"
+                    label="Recalcular liberaciones"
+                    severity="secondary"
+                    outlined
+                    class="cerrar-btn"
+                    :loading="loadingRecalcular"
+                    :disabled="!periodoActivo"
+                    v-tooltip.left="'Recalcula y libera automáticamente a quienes cumplen todos los requisitos'"
+                    @click="recalcularLiberaciones"
+                />
                 <Button
                     icon="pi pi-arrow-up-right"
                     label="Avanzar prácticas"
@@ -357,11 +400,32 @@ const progressPct = (row) => {
                 </Column>
 
                 <!-- ESTADO ASIGNACIÓN -->
-                <Column header="Asignación" style="min-width: 130px">
+                <Column header="Asignación" style="min-width: 150px">
+                    <template #body="{ data }">
+                        <div class="asig-cell">
+                            <Tag
+                                :value="asignacionLabel(data.asignacion_estado)"
+                                :severity="asignacionSeverity(data.asignacion_estado)"
+                            />
+                            <span v-if="data.asignacion_tipo === 'automatica'" class="asig-auto-badge" title="Asignado automáticamente">Auto</span>
+                        </div>
+                    </template>
+                </Column>
+
+                <!-- ENCUESTA -->
+                <Column header="Encuesta" style="min-width: 110px">
                     <template #body="{ data }">
                         <Tag
-                            :value="asignacionLabel(data.asignacion_estado)"
-                            :severity="asignacionSeverity(data.asignacion_estado)"
+                            v-if="data.encuesta_completada"
+                            value="Completada"
+                            severity="success"
+                            icon="pi pi-check"
+                        />
+                        <Tag
+                            v-else
+                            value="Pendiente"
+                            severity="warn"
+                            icon="pi pi-clock"
                         />
                     </template>
                 </Column>
@@ -448,6 +512,49 @@ const progressPct = (row) => {
                     :loading="loading"
                     @click="confirmarCerrarPostulaciones"
                 />
+            </template>
+        </Dialog>
+
+        <!-- ========================= -->
+        <!-- DIALOG RECALCULAR         -->
+        <!-- ========================= -->
+        <Dialog v-model:visible="showRecalcularResult" modal header="Recalcular liberaciones — Resultado" :style="{ width: '480px' }">
+            <div v-if="resultadoRecalcular" class="dialog-body" style="text-align: left">
+                <div class="resultado-resumen" style="grid-template-columns: repeat(2, 1fr)">
+                    <div class="resumen-chip chip-green">
+                        <span class="chip-num">{{ resultadoRecalcular.liberados }}</span>
+                        <span class="chip-lbl">Liberados ahora</span>
+                    </div>
+                    <div class="resumen-chip chip-secondary">
+                        <span class="chip-num">{{ resultadoRecalcular.procesados }}</span>
+                        <span class="chip-lbl">Procesados</span>
+                    </div>
+                </div>
+
+                <div v-if="resultadoRecalcular.detalle?.length" class="resultado-grupos" style="margin-top: 1rem">
+                    <div class="resultado-grupo">
+                        <div class="grupo-header grupo-secondary">
+                            <i class="pi pi-list"></i>
+                            <span>Detalle por alumno</span>
+                        </div>
+                        <div class="grupo-list" style="max-height: 280px; overflow-y: auto">
+                            <div v-for="d in resultadoRecalcular.detalle" :key="d.id_alumno" class="grupo-item">
+                                <span class="gi-nombre">{{ d.matricula }}</span>
+                                <span
+                                    class="gi-badge"
+                                    :class="{
+                                        'gi-badge-green': d.resultado === 'LIBERADO',
+                                        'gi-badge-amber': d.resultado.startsWith('pendiente'),
+                                        'gi-badge-secondary': d.resultado === 'ya_liberado' || d.resultado.startsWith('promedio'),
+                                    }"
+                                >{{ d.resultado }}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <template #footer>
+                <Button label="Cerrar" @click="showRecalcularResult = false" />
             </template>
         </Dialog>
 
@@ -1159,5 +1266,13 @@ const progressPct = (row) => {
         width: 100%;
         justify-content: space-between;
     }
+}
+
+.asig-cell { display: flex; align-items: center; gap: .4rem; }
+.asig-auto-badge {
+    font-size: .65rem; font-weight: 700; letter-spacing: .03em;
+    padding: .1rem .35rem; border-radius: .25rem;
+    background: #e0f2fe; color: #0369a1;
+    white-space: nowrap;
 }
 </style>

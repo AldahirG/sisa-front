@@ -1,244 +1,330 @@
-<script setup>
+﻿<script setup>
 import api from '@/api/axios';
-import { useToast } from 'primevue/usetoast';
+import { useToast } from '@/composables/useAppToast';
 import { computed, onMounted, ref, watch } from 'vue';
 
-// PrimeVue
 import Button from 'primevue/button';
-import Column from 'primevue/column';
-import DataTable from 'primevue/datatable';
-import Dialog from 'primevue/dialog';
-import IconField from 'primevue/iconfield';
-import InputIcon from 'primevue/inputicon';
+import ConfirmDialog from 'primevue/confirmdialog';
 import InputNumber from 'primevue/inputnumber';
-import InputText from 'primevue/inputtext';
 import Select from 'primevue/select';
 import Tag from 'primevue/tag';
 import Textarea from 'primevue/textarea';
 import Toast from 'primevue/toast';
+import { useConfirm } from 'primevue/useconfirm';
 
-// =======================
-// STATE
-// =======================
 const toast = useToast();
+const confirm = useConfirm();
 
-const periodos = ref([]);
+// ══════════════════════════════════════════════════════════
+// PERIODO
+// ══════════════════════════════════════════════════════════
+const periodos            = ref([]);
 const periodoSeleccionado = ref(null);
-const evaluaciones = ref([]);
-const loading = ref(false);
 
-const dialogVisible = ref(false);
-const evaluacionSeleccionada = ref(null);
-
-const form = ref({
-    calificacion: null,
-    observaciones: ''
-});
-
-// =======================
-// FILTERS (computed-based)
-// =======================
-const searchGlobal = ref('');
-const filterEntregable = ref(null);
-const filterEstado = ref(null);
-
-const estadoOptions = [
-    { label: 'Evaluado', value: true },
-    { label: 'Pendiente', value: false }
-];
-
-const entregableOptions = computed(() => {
-    const set = new Set();
-    evaluaciones.value.forEach((e) => {
-        if (e.entregable?.nombre) set.add(e.entregable.nombre);
-    });
-    return Array.from(set).sort();
-});
-
-const filteredEvaluaciones = computed(() => {
-    let result = evaluaciones.value;
-
-    if (searchGlobal.value?.trim()) {
-        const q = searchGlobal.value.trim().toLowerCase();
-        result = result.filter(
-            (e) =>
-                e.alumno?.nombre?.toLowerCase().includes(q) ||
-                e.alumno?.matricula?.toLowerCase().includes(q) ||
-                e.alumno?.carrera?.toLowerCase().includes(q) ||
-                e.entregable?.nombre?.toLowerCase().includes(q)
-        );
-    }
-
-    if (filterEntregable.value) {
-        result = result.filter((e) => e.entregable?.nombre === filterEntregable.value);
-    }
-
-    if (filterEstado.value !== null && filterEstado.value !== undefined) {
-        result = result.filter((e) => e.evaluado === filterEstado.value);
-    }
-
-    return result;
-});
-
-// =======================
-// FORMATOS
-// =======================
-const formatFechaHora = (fecha) => {
-    if (!fecha) return '—';
-    const d = fecha instanceof Date ? fecha : new Date(fecha);
-    return d.toLocaleString('es-MX', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-    });
-};
-
-const normalizeDate = (date) => {
-    if (!date) return null;
-    const d = new Date(date);
-    d.setHours(0, 0, 0, 0);
-    return d;
-};
-
-// =======================
-// Ver archivo
-// =======================
-const verArchivo = (url) => {
-    if (!url) {
-        toast.add({
-            severity: 'warn',
-            summary: 'Archivo no disponible',
-            detail: 'No se encontró el enlace del entregable',
-            life: 3000
-        });
-        return;
-    }
-    window.open(url, '_blank', 'noopener,noreferrer');
-};
-
-// =======================
-// LOAD PERIODOS
-// =======================
 const loadPeriodos = async () => {
     try {
         const { data } = await api.get('/periodos');
         periodos.value = data;
-        // AUTO-SELECT: active period first, fallback to first
-        periodoSeleccionado.value = data.find((p) => p.estado === 'activo') ?? data[0] ?? null;
-        if (periodoSeleccionado.value) {
-            await loadEvaluaciones();
-        }
+        periodoSeleccionado.value = data.find((p) => p.estado === 'activo') ?? null;
+        if (periodoSeleccionado.value) await loadDashboard();
     } catch {
-        toast.add({
-            severity: 'error',
-            summary: 'Error',
-            detail: 'No se pudieron cargar los periodos',
-            life: 4000
-        });
+        toast.add({ severity: 'error', summary: 'Error', detail: 'No se pudieron cargar los periodos', life: 4000 });
     }
 };
 
-// =======================
-// LOAD EVALUACIONES
-// =======================
-const loadEvaluaciones = async () => {
-    if (!periodoSeleccionado.value) return;
-
-    try {
-        loading.value = true;
-        // Reset filters on period change
-        searchGlobal.value = '';
-        filterEntregable.value = null;
-        filterEstado.value = null;
-
-        const { data } = await api.get(`/entregables/evaluaciones/periodo/${periodoSeleccionado.value.id_periodo}`);
-
-        evaluaciones.value = data.map((e) => ({
-            ...e,
-            fecha_envio: e.fecha_envio ? normalizeDate(e.fecha_envio) : null
-        }));
-    } catch {
-        toast.add({
-            severity: 'error',
-            summary: 'Error',
-            detail: 'No se pudieron cargar las evaluaciones',
-            life: 4000
-        });
-    } finally {
-        loading.value = false;
-    }
-};
-
-watch(periodoSeleccionado, loadEvaluaciones);
-
-// =======================
-// MODAL
-// =======================
-const abrirEvaluacion = (row) => {
-    evaluacionSeleccionada.value = row;
-    form.value = {
-        calificacion: row.calificacion,
-        observaciones: row.observaciones ?? ''
-    };
-    dialogVisible.value = true;
-};
-
-const guardarEvaluacion = async () => {
-    try {
-        await api.post(`/entregables/evaluar/${evaluacionSeleccionada.value.id_entrega}`, form.value);
-        toast.add({ severity: 'success', summary: 'Evaluación guardada', life: 3000 });
-        dialogVisible.value = false;
-        // INC-12: actualizar en local en lugar de recargar (que resetea filtros)
-        const idx = evaluaciones.value.findIndex(
-            (e) => e.id_entrega === evaluacionSeleccionada.value.id_entrega
-        );
-        if (idx !== -1) {
-            evaluaciones.value[idx] = {
-                ...evaluaciones.value[idx],
-                calificacion: form.value.calificacion,
-                observaciones: form.value.observaciones,
-                evaluado: true
-            };
-        }
-    } catch {
-        toast.add({
-            severity: 'error',
-            summary: 'Error',
-            detail: 'No se pudo guardar la evaluación',
-            life: 4000
-        });
-    }
-};
-
-// =======================
-// STATS computed
-// =======================
-const stats = computed(() => {
-    const total = evaluaciones.value.length;
-    const evaluados = evaluaciones.value.filter((e) => e.evaluado).length;
-    const pendientes = total - evaluados;
-    return { total, evaluados, pendientes };
+watch(periodoSeleccionado, () => {
+    entregableActivo.value = null;
+    estudiantes.value = [];
+    estudianteActivo.value = null;
+    loadDashboard();
 });
+
+// ══════════════════════════════════════════════════════════
+// DASHBOARD — cards de entregables
+// ══════════════════════════════════════════════════════════
+const entregables      = ref([]);
+const loadingDashboard = ref(false);
+
+const loadDashboard = async () => {
+    if (!periodoSeleccionado.value) return;
+    loadingDashboard.value = true;
+    try {
+        const { data } = await api.get(
+            `/entregables/evaluaciones/periodo/${periodoSeleccionado.value.id_periodo}/dashboard`
+        );
+        entregables.value = data;
+    } catch {
+        toast.add({ severity: 'error', summary: 'Error', detail: 'No se pudo cargar el dashboard', life: 4000 });
+    } finally {
+        loadingDashboard.value = false;
+    }
+};
+
+// Ciclo de acentos para las cards del dashboard
+const CARD_ACCENTS = [
+    { tint: 'var(--sisa-tint-blue)',   icon: 'var(--sisa-icon-blue)',   border: 'var(--sisa-icon-blue)'   },
+    { tint: 'var(--sisa-tint-green)',  icon: 'var(--sisa-icon-green)',  border: 'var(--sisa-icon-green)'  },
+    { tint: 'var(--sisa-tint-purple)', icon: 'var(--sisa-icon-purple)', border: 'var(--sisa-icon-purple)' },
+    { tint: 'var(--sisa-tint-amber)',  icon: 'var(--sisa-icon-amber)',  border: 'var(--sisa-icon-amber)'  },
+];
+const cardAccent = (idx) => CARD_ACCENTS[idx % CARD_ACCENTS.length];
+
+// ══════════════════════════════════════════════════════════
+// CLASSROOM VIEW — entregable seleccionado
+// ══════════════════════════════════════════════════════════
+const entregableActivo = ref(null);
+const estudiantes      = ref([]);
+const loadingEst       = ref(false);
+const tabActivo        = ref('entregados');
+const searchEst        = ref('');
+const estudianteActivo = ref(null);
+
+const abrirEntregable = async (ent) => {
+    entregableActivo.value = ent;
+    estudianteActivo.value = null;
+    tabActivo.value        = 'entregados';
+    searchEst.value        = '';
+    await loadEstudiantes(ent.id_entregable);
+};
+
+const volverDashboard = () => {
+    entregableActivo.value = null;
+    estudianteActivo.value = null;
+    estudiantes.value      = [];
+    mobilePanel.value      = 'list';
+};
+
+const loadEstudiantes = async (id_entregable) => {
+    loadingEst.value = true;
+    try {
+        const { data } = await api.get(`/entregables/evaluaciones/entregable/${id_entregable}/alumnos`);
+        estudiantes.value = data;
+    } catch {
+        toast.add({ severity: 'error', summary: 'Error', detail: 'No se pudo cargar la lista de alumnos', life: 4000 });
+    } finally {
+        loadingEst.value = false;
+    }
+};
+
+const estudiantesEntregados  = computed(() => estudiantes.value.filter((e) => e.entrega));
+const estudiantesSinEntregar = computed(() => estudiantes.value.filter((e) => !e.entrega));
+
+const estudiantesActivos = computed(() => {
+    const lista = tabActivo.value === 'entregados' ? estudiantesEntregados.value : estudiantesSinEntregar.value;
+    if (!searchEst.value.trim()) return lista;
+    const q = searchEst.value.toLowerCase();
+    return lista.filter(
+        (e) =>
+            e.alumno.nombre.toLowerCase().includes(q) ||
+            e.alumno.matricula.toLowerCase().includes(q)
+    );
+});
+
+// 'list' | 'detail' — only matters on mobile (<960px)
+const mobilePanel = ref('list');
+
+const seleccionarEstudiante = async (est) => {
+    estudianteActivo.value = est;
+    mobilePanel.value = 'detail';
+    formEval.value = {
+        calificacion: est.entrega?.calificacion ?? null,
+        observaciones: est.entrega?.observaciones ?? ''
+    };
+    comentarios.value = [];
+    nuevoComentario.value = '';
+    if (est.entrega?.id_entrega) {
+        await loadComentarios(est.entrega.id_entrega);
+    }
+};
+
+const volverALista = () => {
+    mobilePanel.value = 'list';
+    estudianteActivo.value = null;
+};
+
+// ══════════════════════════════════════════════════════════
+// EVALUACIÓN
+// ══════════════════════════════════════════════════════════
+const formEval  = ref({ calificacion: null, observaciones: '' });
+const guardando = ref(false);
+
+const ejecutarGuardarEvaluacion = async () => {
+    guardando.value = true;
+    try {
+        await api.post(
+            `/entregables/evaluar/${estudianteActivo.value.entrega.id_entrega}`,
+            formEval.value
+        );
+        estudianteActivo.value.entrega.calificacion  = formEval.value.calificacion;
+        estudianteActivo.value.entrega.observaciones = formEval.value.observaciones;
+        await loadDashboard();
+        await loadEstudiantes(entregableActivo.value.id_entregable);
+        const updated = estudiantes.value.find(
+            (e) => e.alumno.id_alumno === estudianteActivo.value.alumno.id_alumno
+        );
+        if (updated) estudianteActivo.value = updated;
+        toast.add({ severity: 'success', summary: 'Evaluación guardada', life: 2500 });
+    } catch {
+        toast.add({ severity: 'error', summary: 'Error', detail: 'No se pudo guardar la evaluación', life: 4000 });
+    } finally {
+        guardando.value = false;
+    }
+};
+
+const guardarEvaluacion = () => {
+    if (formEval.value.calificacion === null || formEval.value.calificacion === undefined) {
+        toast.add({ severity: 'warn', summary: 'Campo requerido', detail: 'Ingresa una calificación', life: 3000 });
+        return;
+    }
+    const yaCalificado = estudianteActivo.value.entrega?.calificacion !== null &&
+                         estudianteActivo.value.entrega?.calificacion !== undefined;
+    if (yaCalificado) {
+        confirm.require({
+            message: `Este alumno ya tiene calificación ${estudianteActivo.value.entrega.calificacion}. ¿Sobrescribir con ${formEval.value.calificacion}?`,
+            header: 'Reemplazar calificación',
+            icon: 'pi pi-exclamation-triangle',
+            acceptLabel: 'Sí, reemplazar',
+            rejectLabel: 'Cancelar',
+            acceptClass: 'p-button-warning',
+            accept: ejecutarGuardarEvaluacion,
+        });
+    } else {
+        ejecutarGuardarEvaluacion();
+    }
+};
+
+// ══════════════════════════════════════════════════════════
+// COMENTARIOS
+// ══════════════════════════════════════════════════════════
+const comentarios          = ref([]);
+const loadingComentarios   = ref(false);
+const nuevoComentario      = ref('');
+const submittingComentario = ref(false);
+
+const loadComentarios = async (id_entrega) => {
+    loadingComentarios.value = true;
+    try {
+        const { data } = await api.get(`/entregables/entregas/${id_entrega}/comentarios`);
+        comentarios.value = data;
+    } catch {
+        comentarios.value = [];
+    } finally {
+        loadingComentarios.value = false;
+    }
+};
+
+const enviarComentario = async () => {
+    if (!nuevoComentario.value.trim()) return;
+    submittingComentario.value = true;
+    try {
+        await api.post(
+            `/entregables/entregas/${estudianteActivo.value.entrega.id_entrega}/comentarios`,
+            { contenido: nuevoComentario.value.trim() }
+        );
+        nuevoComentario.value = '';
+        await loadComentarios(estudianteActivo.value.entrega.id_entrega);
+    } catch {
+        toast.add({ severity: 'error', summary: 'Error', detail: 'No se pudo enviar el comentario', life: 3000 });
+    } finally {
+        submittingComentario.value = false;
+    }
+};
+
+const eliminarComentario = (id_comentario) => {
+    confirm.require({
+        message: '¿Eliminar este comentario? Esta acción no se puede deshacer.',
+        header: 'Confirmar eliminación',
+        icon: 'pi pi-exclamation-triangle',
+        acceptLabel: 'Eliminar',
+        rejectLabel: 'Cancelar',
+        acceptClass: 'p-button-danger',
+        accept: async () => {
+            try {
+                await api.delete(`/entregables/comentarios/${id_comentario}`);
+                await loadComentarios(estudianteActivo.value.entrega.id_entrega);
+            } catch {
+                toast.add({ severity: 'error', summary: 'Error', detail: 'No se pudo eliminar el comentario', life: 3000 });
+            }
+        }
+    });
+};
+
+// ══════════════════════════════════════════════════════════
+// HELPERS
+// ══════════════════════════════════════════════════════════
+const formatDate = (s) => {
+    if (!s) return '—';
+    const d = s.includes('T') ? new Date(s) : new Date(s + 'T00:00:00');
+    return d.toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' });
+};
+
+const formatDateTime = (s) => {
+    if (!s) return '—';
+    return new Date(s).toLocaleString('es-MX', {
+        day: '2-digit', month: 'short',
+        hour: '2-digit', minute: '2-digit'
+    });
+};
+
+const isVencido    = (s) => s && new Date(s) < new Date();
+const entregadoPct = (ent) => ent.stats.total_alumnos
+    ? Math.round((ent.stats.entregados / ent.stats.total_alumnos) * 100)
+    : 0;
+
+const calColor = (cal) => {
+    if (cal === null || cal === undefined) return '';
+    if (cal >= 9)  return 'cal-a';
+    if (cal >= 7)  return 'cal-b';
+    if (cal >= 6)  return 'cal-c';
+    return 'cal-f';
+};
 
 onMounted(loadPeriodos);
 </script>
 
 <template>
-    <div class="page-container">
-        <!-- ══════════════════════════════════
-             HEADER BAR
-        ══════════════════════════════════ -->
-        <div class="page-header">
-            <div class="page-title-group">
-                <span class="page-icon">
-                    <i class="pi pi-star" />
-                </span>
-                <div>
-                    <h4 class="page-title">Evaluaciones</h4>
-                    <p class="page-subtitle">Revisa y califica los entregables de alumnos</p>
-                </div>
+    <div class="ev-page">
+        <Toast />
+        <ConfirmDialog />
+
+        <!-- ══════════════════════════════════════════
+             PAGE HEADER
+        ══════════════════════════════════════════ -->
+        <div class="ev-header">
+            <div class="ev-header-left">
+                <template v-if="entregableActivo">
+                    <button class="back-pill" @click="volverDashboard">
+                        <i class="pi pi-arrow-left"></i>
+                        Entregables
+                    </button>
+                    <div class="ev-header-title">
+                        <div class="ev-num-badge">#{{ entregableActivo.numero }}</div>
+                        <div>
+                            <h4 class="ev-title">{{ entregableActivo.nombre }}</h4>
+                            <p class="ev-subtitle">
+                                <span class="stat-pill stat-pill--green">
+                                    <i class="pi pi-check"></i> {{ entregableActivo.stats.entregados }}/{{ entregableActivo.stats.total_alumnos }}
+                                </span>
+                                <span class="stat-pill stat-pill--blue">
+                                    <i class="pi pi-star"></i> {{ entregableActivo.stats.evaluados }} eval.
+                                </span>
+                                <span v-if="entregableActivo.stats.pendientes_eval > 0" class="stat-pill stat-pill--amber">
+                                    <i class="pi pi-clock"></i> {{ entregableActivo.stats.pendientes_eval }} pendientes
+                                </span>
+                            </p>
+                        </div>
+                    </div>
+                </template>
+
+                <template v-else>
+                    <div class="ev-page-icon">
+                        <i class="pi pi-star-fill"></i>
+                    </div>
+                    <div>
+                        <h4 class="ev-title">Evaluaciones</h4>
+                        <p class="ev-subtitle-plain">Revisa y califica los entregables por actividad</p>
+                    </div>
+                </template>
             </div>
 
             <Select
@@ -246,627 +332,1222 @@ onMounted(loadPeriodos);
                 :options="periodos"
                 optionLabel="nombre"
                 placeholder="Seleccionar período"
-                class="periodo-select"
+                class="ev-periodo-select"
             />
         </div>
 
-        <!-- ══════════════════════════════════
-             STATS STRIP (when data loaded)
-        ══════════════════════════════════ -->
-        <div v-if="evaluaciones.length" class="stats-strip">
-            <div class="stat-item">
-                <span class="stat-icon blue"><i class="pi pi-users" /></span>
-                <div>
-                    <p class="stat-label">TOTAL</p>
-                    <p class="stat-value">{{ stats.total }}</p>
+        <!-- ══════════════════════════════════════════
+             VISTA 1 — DASHBOARD
+        ══════════════════════════════════════════ -->
+        <template v-if="!entregableActivo">
+            <div v-if="loadingDashboard" class="ev-loading">
+                <div class="ev-spinner"></div>
+                <span>Cargando entregables…</span>
+            </div>
+
+            <div v-else-if="!periodoSeleccionado" class="ev-empty">
+                <i class="pi pi-star ev-empty-icon"></i>
+                <p>Selecciona un período para comenzar</p>
+            </div>
+
+            <div v-else-if="entregables.length === 0" class="ev-empty">
+                <i class="pi pi-inbox ev-empty-icon"></i>
+                <p>Sin entregables en este período</p>
+            </div>
+
+            <div v-else class="ev-cards-grid">
+                <div
+                    v-for="(ent, i) in entregables"
+                    :key="ent.id_entregable"
+                    class="ev-card"
+                    :style="`--card-accent: ${cardAccent(i).border}; --card-tint: ${cardAccent(i).tint}; --card-icon: ${cardAccent(i).icon}`"
+                    @click="abrirEntregable(ent)"
+                >
+                    <!-- Número + nombre -->
+                    <div class="ev-card-head">
+                        <div class="ev-card-num">{{ ent.numero }}</div>
+                        <div class="ev-card-head-text">
+                            <h3 class="ev-card-nombre">{{ ent.nombre }}</h3>
+                            <p v-if="ent.descripcion" class="ev-card-desc">{{ ent.descripcion }}</p>
+                        </div>
+                    </div>
+
+                    <!-- Fecha -->
+                    <div class="ev-card-fecha">
+                        <i class="pi pi-calendar"></i>
+                        {{ formatDate(ent.fecha_inicio) }} → {{ formatDate(ent.fecha_limite) }}
+                        <span v-if="isVencido(ent.fecha_limite)" class="vencido-pill">Vencido</span>
+                    </div>
+
+                    <!-- Stats 2×2 -->
+                    <div class="ev-stats-grid">
+                        <div class="ev-stat">
+                            <span class="ev-stat-num">{{ ent.stats.entregados }}<em>/{{ ent.stats.total_alumnos }}</em></span>
+                            <span class="ev-stat-lbl">Entregados</span>
+                        </div>
+                        <div class="ev-stat ev-stat--blue">
+                            <span class="ev-stat-num">{{ ent.stats.evaluados }}</span>
+                            <span class="ev-stat-lbl">Evaluados</span>
+                        </div>
+                        <div v-if="ent.stats.pendientes_eval > 0" class="ev-stat ev-stat--amber">
+                            <span class="ev-stat-num">{{ ent.stats.pendientes_eval }}</span>
+                            <span class="ev-stat-lbl">Por evaluar</span>
+                        </div>
+                        <div v-if="ent.stats.sin_entregar > 0" class="ev-stat ev-stat--red">
+                            <span class="ev-stat-num">{{ ent.stats.sin_entregar }}</span>
+                            <span class="ev-stat-lbl">Sin entregar</span>
+                        </div>
+                    </div>
+
+                    <!-- Mini progress track -->
+                    <div class="ev-track-wrap">
+                        <div class="ev-track">
+                            <div class="ev-track-fill" :style="`width: ${entregadoPct(ent)}%`"></div>
+                        </div>
+                        <span class="ev-track-pct">{{ entregadoPct(ent) }}%</span>
+                    </div>
+
+                    <!-- CTA -->
+                    <div class="ev-card-cta">
+                        Revisar entregas <i class="pi pi-arrow-right"></i>
+                    </div>
                 </div>
             </div>
-            <div class="stat-item">
-                <span class="stat-icon green"><i class="pi pi-check-circle" /></span>
-                <div>
-                    <p class="stat-label">EVALUADOS</p>
-                    <p class="stat-value">{{ stats.evaluados }}</p>
+        </template>
+
+        <!-- ══════════════════════════════════════════
+             VISTA 2 — CLASSROOM
+        ══════════════════════════════════════════ -->
+        <div v-else class="ev-classroom">
+            <!-- ── Panel izquierdo ── -->
+            <div class="ev-students" :class="{ 'ev-panel--hidden-mobile': mobilePanel === 'detail' }">
+                <div class="ev-students-head">
+                    <div class="ev-search-wrap">
+                        <i class="pi pi-search ev-search-icon"></i>
+                        <input
+                            v-model="searchEst"
+                            type="text"
+                            placeholder="Buscar por nombre o matrícula…"
+                            class="ev-search-input"
+                        />
+                        <button v-if="searchEst" class="ev-search-clear" @click="searchEst = ''">
+                            <i class="pi pi-times"></i>
+                        </button>
+                    </div>
+                    <div class="ev-tabs">
+                        <button
+                            class="ev-tab"
+                            :class="{ 'ev-tab--active': tabActivo === 'entregados' }"
+                            @click="tabActivo = 'entregados'"
+                        >
+                            <i class="pi pi-check-circle"></i>
+                            Entregados
+                            <span class="ev-tab-count ev-tab-count--green">{{ estudiantesEntregados.length }}</span>
+                        </button>
+                        <button
+                            class="ev-tab"
+                            :class="{ 'ev-tab--active': tabActivo === 'sin_entregar' }"
+                            @click="tabActivo = 'sin_entregar'"
+                        >
+                            <i class="pi pi-times-circle"></i>
+                            Sin entregar
+                            <span class="ev-tab-count ev-tab-count--red">{{ estudiantesSinEntregar.length }}</span>
+                        </button>
+                    </div>
                 </div>
-            </div>
-            <div class="stat-item">
-                <span class="stat-icon amber"><i class="pi pi-clock" /></span>
-                <div>
-                    <p class="stat-label">PENDIENTES</p>
-                    <p class="stat-value">{{ stats.pendientes }}</p>
-                </div>
-            </div>
-        </div>
 
-        <!-- ══════════════════════════════════
-             FILTER BAR
-        ══════════════════════════════════ -->
-        <div class="filter-bar">
-            <!-- Global search -->
-            <IconField class="search-field">
-                <InputIcon class="pi pi-search" />
-                <InputText v-model="searchGlobal" placeholder="Buscar alumno, matrícula, carrera…" />
-            </IconField>
-
-            <!-- Entregable filter -->
-            <Select
-                v-model="filterEntregable"
-                :options="entregableOptions"
-                placeholder="Entregable"
-                showClear
-                class="filter-select"
-            />
-
-            <!-- Estado filter -->
-            <Select
-                v-model="filterEstado"
-                :options="estadoOptions"
-                optionLabel="label"
-                optionValue="value"
-                placeholder="Estado"
-                showClear
-                class="filter-select"
-            />
-
-            <!-- Clear all -->
-            <Button
-                v-if="searchGlobal || filterEntregable !== null || filterEstado !== null"
-                icon="pi pi-filter-slash"
-                text
-                severity="secondary"
-                v-tooltip="'Limpiar filtros'"
-                @click="searchGlobal = ''; filterEntregable = null; filterEstado = null"
-            />
-        </div>
-
-        <!-- ══════════════════════════════════
-             EMPTY SELECTION
-        ══════════════════════════════════ -->
-        <div v-if="!periodoSeleccionado && !loading" class="empty-state">
-            <i class="pi pi-star empty-icon" />
-            <p class="empty-text">Selecciona un período para ver las evaluaciones</p>
-        </div>
-
-        <!-- ══════════════════════════════════
-             TABLE
-        ══════════════════════════════════ -->
-        <div v-else class="table-panel">
-            <DataTable
-                :value="filteredEvaluaciones"
-                :loading="loading"
-                paginator
-                :rows="10"
-                responsiveLayout="scroll"
-                stripedRows
-                :rowHover="true"
-                class="evaluaciones-table"
-            >
-                <!-- Alumno -->
-                <Column field="alumno.nombre" header="Alumno">
-                    <template #body="{ data }">
-                        <div class="alumno-cell">
-                            <span class="alumno-avatar">
-                                {{ (data.alumno?.nombre ?? '?')[0].toUpperCase() }}
+                <div class="ev-student-list">
+                    <div v-if="loadingEst" class="ev-list-state">
+                        <div class="ev-spinner ev-spinner--sm"></div> Cargando…
+                    </div>
+                    <div v-else-if="estudiantesActivos.length === 0" class="ev-list-state">
+                        <i class="pi pi-inbox"></i> Sin resultados
+                    </div>
+                    <button
+                        v-else
+                        v-for="est in estudiantesActivos"
+                        :key="est.alumno.id_alumno"
+                        class="ev-student-row"
+                        :class="{ 'ev-student-row--active': estudianteActivo?.alumno.id_alumno === est.alumno.id_alumno }"
+                        @click="seleccionarEstudiante(est)"
+                    >
+                        <div class="ev-av">{{ (est.alumno.nombre || '?')[0].toUpperCase() }}</div>
+                        <div class="ev-student-info">
+                            <p class="ev-student-name">{{ est.alumno.nombre }}</p>
+                            <p class="ev-student-meta">{{ est.alumno.matricula }}</p>
+                        </div>
+                        <div class="ev-student-right">
+                            <span
+                                v-if="est.entrega?.calificacion !== null && est.entrega?.calificacion !== undefined"
+                                class="ev-cal-badge"
+                                :class="calColor(est.entrega.calificacion)"
+                            >
+                                {{ est.entrega.calificacion }}
                             </span>
-                            <div>
-                                <p class="alumno-nombre">{{ data.alumno?.nombre ?? '—' }}</p>
-                                <p class="alumno-carrera">{{ data.alumno?.carrera ?? '—' }}</p>
+                            <span v-else-if="est.entrega" class="ev-pending-dot">
+                                <i class="pi pi-hourglass"></i>
+                            </span>
+                        </div>
+                    </button>
+                </div>
+            </div>
+
+            <!-- ── Panel derecho ── -->
+            <div class="ev-submission" :class="{ 'ev-panel--hidden-mobile': mobilePanel === 'list' }">
+                <!-- Botón back — solo mobile -->
+                <button v-if="estudianteActivo" class="ev-back-btn" @click="volverALista">
+                    <i class="pi pi-arrow-left"></i> Volver a lista
+                </button>
+                <!-- Vacío -->
+                <div v-if="!estudianteActivo" class="ev-sub-empty">
+                    <div class="ev-sub-empty-icon"><i class="pi pi-user"></i></div>
+                    <p>Selecciona un alumno para ver su entrega</p>
+                </div>
+
+                <!-- Sin entrega -->
+                <template v-else-if="!estudianteActivo.entrega">
+                    <div class="ev-sub-header">
+                        <div class="ev-sub-av">{{ (estudianteActivo.alumno.nombre || '?')[0].toUpperCase() }}</div>
+                        <div>
+                            <p class="ev-sub-nombre">{{ estudianteActivo.alumno.nombre }}</p>
+                            <p class="ev-sub-meta">{{ estudianteActivo.alumno.matricula }} · {{ estudianteActivo.alumno.carrera }}</p>
+                        </div>
+                    </div>
+                    <div class="ev-no-entry">
+                        <i class="pi pi-inbox"></i>
+                        <p>Este alumno aún no ha entregado</p>
+                    </div>
+                </template>
+
+                <!-- Con entrega -->
+                <template v-else>
+                    <div class="ev-sub-header">
+                        <div class="ev-sub-av">{{ (estudianteActivo.alumno.nombre || '?')[0].toUpperCase() }}</div>
+                        <div class="ev-sub-header-text">
+                            <p class="ev-sub-nombre">{{ estudianteActivo.alumno.nombre }}</p>
+                            <p class="ev-sub-meta">{{ estudianteActivo.alumno.matricula }} · {{ estudianteActivo.alumno.carrera }}</p>
+                        </div>
+                        <div class="ev-sub-envio">
+                            <i class="pi pi-send"></i>
+                            {{ formatDateTime(estudianteActivo.entrega.fecha_envio) }}
+                        </div>
+                    </div>
+
+                    <div class="ev-sub-body">
+                        <!-- Archivo -->
+                        <div class="ev-sub-section">
+                            <span class="ev-sub-label"><i class="pi pi-paperclip"></i> Archivo entregado</span>
+                            <a
+                                v-if="estudianteActivo.entrega.archivo_url"
+                                :href="estudianteActivo.entrega.archivo_url"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                class="ev-file-link"
+                            >
+                                <i class="pi pi-external-link"></i> Ver archivo
+                            </a>
+                            <span v-else class="ev-no-file">Sin archivo adjunto</span>
+                        </div>
+
+                        <!-- Calificación -->
+                        <div class="ev-sub-section">
+                            <span class="ev-sub-label"><i class="pi pi-star"></i> Calificación (0–10)</span>
+                            <div class="ev-grade-input-wrap">
+                                <InputNumber
+                                    v-model="formEval.calificacion"
+                                    :min="0" :max="10" :step="0.5"
+                                    showButtons
+                                    class="ev-grade-input"
+                                />
+                                <Button
+                                    label="Guardar"
+                                    icon="pi pi-check"
+                                    severity="success"
+                                    :loading="guardando"
+                                    class="ev-save-btn"
+                                    @click="guardarEvaluacion"
+                                />
                             </div>
                         </div>
-                    </template>
-                </Column>
 
-                <!-- Matrícula -->
-                <Column field="alumno.matricula" header="Matrícula">
-                    <template #body="{ data }">
-                        <span class="matricula-chip">{{ data.alumno?.matricula ?? '—' }}</span>
-                    </template>
-                </Column>
+                        <!-- Observaciones -->
+                        <div class="ev-sub-section">
+                            <span class="ev-sub-label"><i class="pi pi-comment"></i> Retroalimentación para el alumno</span>
+                            <Textarea
+                                v-model="formEval.observaciones"
+                                rows="3"
+                                autoResize
+                                class="w-full ev-obs-area"
+                                placeholder="Escribe retroalimentación…"
+                            />
+                        </div>
 
-                <!-- Entregable -->
-                <Column field="entregable.nombre" header="Entregable">
-                    <template #body="{ data }">
-                        <span class="entregable-name">{{ data.entregable?.nombre ?? '—' }}</span>
-                    </template>
-                </Column>
+                        <!-- Comentarios -->
+                        <div class="ev-comments">
+                            <div class="ev-comments-head">
+                                <span class="ev-sub-label">
+                                    <i class="pi pi-comments"></i> Hilo de comentarios
+                                </span>
+                                <span v-if="comentarios.length" class="ev-comments-count">{{ comentarios.length }}</span>
+                            </div>
 
-                <!-- Fecha entrega -->
-                <Column field="fecha_envio" header="Fecha entrega">
-                    <template #body="{ data }">
-                        <span class="fecha-text">{{ formatFechaHora(data.fecha_envio) }}</span>
-                    </template>
-                </Column>
+                            <div v-if="loadingComentarios" class="ev-comments-state">
+                                <div class="ev-spinner ev-spinner--sm"></div> Cargando…
+                            </div>
+                            <div v-else-if="comentarios.length === 0" class="ev-comments-state">
+                                Sin comentarios en esta entrega.
+                            </div>
+                            <div v-else class="ev-comments-list">
+                                <div
+                                    v-for="c in comentarios"
+                                    :key="c.id_comentario"
+                                    class="ev-comment"
+                                    :class="c.autor.rol === 'admin' ? 'ev-comment--admin' : 'ev-comment--alumno'"
+                                >
+                                    <div class="ev-comment-head">
+                                        <span class="ev-comment-autor">
+                                            <span class="ev-comment-role-dot" :class="c.autor.rol === 'admin' ? 'dot-admin' : 'dot-alumno'"></span>
+                                            {{ c.autor.nombre }}
+                                            <span class="ev-comment-rol" :class="c.autor.rol === 'admin' ? 'rol-admin' : 'rol-alumno'">
+                                                {{ c.autor.rol === 'admin' ? 'Coordinador' : 'Alumno' }}
+                                            </span>
+                                        </span>
+                                        <div class="ev-comment-actions">
+                                            <span class="ev-comment-fecha">{{ formatDateTime(c.fecha) }}</span>
+                                            <button
+                                                v-if="c.autor.rol === 'admin'"
+                                                class="ev-comment-del"
+                                                @click="eliminarComentario(c.id_comentario)"
+                                            >
+                                                <i class="pi pi-trash"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <p class="ev-comment-text">{{ c.contenido }}</p>
+                                </div>
+                            </div>
 
-                <!-- Estado -->
-                <Column field="evaluado" header="Estado" style="width: 120px">
-                    <template #body="{ data }">
-                        <Tag
-                            :value="data.evaluado ? 'Evaluado' : 'Pendiente'"
-                            :severity="data.evaluado ? 'success' : 'warning'"
-                        />
-                    </template>
-                </Column>
-
-                <!-- Calificación -->
-                <Column field="calificacion" header="Calificación" style="width: 110px">
-                    <template #body="{ data }">
-                        <span v-if="data.calificacion !== null && data.calificacion !== undefined" class="calificacion-badge" :class="data.calificacion >= 6 ? 'cal-pass' : 'cal-fail'">
-                            {{ data.calificacion }}
-                        </span>
-                        <span v-else class="calificacion-empty">—</span>
-                    </template>
-                </Column>
-
-                <!-- Acciones -->
-                <Column header="Acciones" style="width: 80px">
-                    <template #body="{ data }">
-                        <Button
-                            icon="pi pi-eye"
-                            text
-                            size="small"
-                            v-tooltip="'Ver / Evaluar'"
-                            @click="abrirEvaluacion(data)"
-                        />
-                    </template>
-                </Column>
-            </DataTable>
-        </div>
-
-        <!-- ══════════════════════════════════
-             EVALUATION DIALOG
-        ══════════════════════════════════ -->
-        <Dialog
-            v-model:visible="dialogVisible"
-            modal
-            header="Evaluar entregable"
-            :style="{ width: '580px' }"
-            :breakpoints="{ '960px': '90vw', '640px': '95vw' }"
-        >
-            <div class="eval-form" v-if="evaluacionSeleccionada">
-                <!-- Info header -->
-                <div class="eval-info-header">
-                    <div class="eval-avatar">
-                        {{ (evaluacionSeleccionada.alumno?.nombre ?? '?')[0].toUpperCase() }}
+                            <div class="ev-comment-new">
+                                <Textarea
+                                    v-model="nuevoComentario"
+                                    placeholder="Escribe un comentario… (Ctrl+Enter para enviar)"
+                                    rows="2" autoResize
+                                    class="w-full ev-comment-ta"
+                                    @keydown.ctrl.enter="enviarComentario"
+                                />
+                                <Button
+                                    label="Enviar"
+                                    icon="pi pi-send"
+                                    size="small"
+                                    :loading="submittingComentario"
+                                    :disabled="!nuevoComentario.trim()"
+                                    class="ev-send-btn"
+                                    @click="enviarComentario"
+                                />
+                            </div>
+                        </div>
                     </div>
-                    <div>
-                        <p class="eval-alumno-name">{{ evaluacionSeleccionada.alumno?.nombre }}</p>
-                        <p class="eval-alumno-meta">
-                            {{ evaluacionSeleccionada.alumno?.matricula }} ·
-                            {{ evaluacionSeleccionada.alumno?.carrera }}
-                        </p>
-                    </div>
-                </div>
-
-                <div class="eval-grid">
-                    <!-- Entregable -->
-                    <div class="field full-field">
-                        <label class="field-label">
-                            <i class="pi pi-box" />
-                            Entregable
-                        </label>
-                        <InputText :value="evaluacionSeleccionada.entregable?.nombre" disabled class="w-full" />
-                    </div>
-
-                    <!-- Archivo -->
-                    <div class="field">
-                        <label class="field-label">
-                            <i class="pi pi-file" />
-                            Archivo entregado
-                        </label>
-                        <Button
-                            icon="pi pi-external-link"
-                            label="Ver archivo"
-                            severity="info"
-                            outlined
-                            @click="verArchivo(evaluacionSeleccionada.archivo_url)"
-                        />
-                    </div>
-
-                    <!-- Calificación -->
-                    <div class="field">
-                        <label class="field-label">
-                            <i class="pi pi-star" />
-                            Calificación (0 – 10)
-                        </label>
-                        <InputNumber
-                            v-model="form.calificacion"
-                            :min="0"
-                            :max="10"
-                            :step="0.5"
-                            showButtons
-                            class="w-full"
-                        />
-                    </div>
-
-                    <!-- Observaciones -->
-                    <div class="field full-field">
-                        <label class="field-label">
-                            <i class="pi pi-comment" />
-                            Observaciones
-                        </label>
-                        <Textarea v-model="form.observaciones" rows="4" autoResize class="w-full" placeholder="Comentarios opcionales para el alumno…" />
-                    </div>
-                </div>
+                </template>
             </div>
-
-            <template #footer>
-                <div class="dialog-footer">
-                    <Button label="Cancelar" text @click="dialogVisible = false" />
-                    <Button label="Guardar evaluación" icon="pi pi-check" severity="success" @click="guardarEvaluacion" />
-                </div>
-            </template>
-        </Dialog>
-
-        <Toast />
+        </div>
     </div>
 </template>
 
 <style scoped>
-/* ══════════════════════════════════
-   PAGE LAYOUT
-══════════════════════════════════ */
-.page-container {
+/* ═══════════════════════════════════════
+   BASE
+═══════════════════════════════════════ */
+.ev-page {
     padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
 }
 
-/* ══════════════════════════════════
+/* ═══════════════════════════════════════
    HEADER
-══════════════════════════════════ */
-.page-header {
+═══════════════════════════════════════ */
+.ev-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
-    margin-bottom: 1.25rem;
     flex-wrap: wrap;
 }
 
-.page-title-group {
+.ev-header-left {
     display: flex;
     align-items: center;
-    gap: 1rem;
+    gap: .875rem;
+    flex: 1;
+    min-width: 0;
 }
 
-.page-icon {
-    display: flex;
+.back-pill {
+    display: inline-flex;
     align-items: center;
-    justify-content: center;
+    gap: .4rem;
+    padding: .4rem .875rem;
+    border-radius: 99px;
+    border: 1px solid var(--p-content-border-color);
+    background: var(--p-content-background);
+    font-size: .78rem;
+    font-weight: 600;
+    color: var(--p-text-muted-color);
+    cursor: pointer;
+    transition: all .18s;
+    flex-shrink: 0;
+    font-family: inherit;
+}
+.back-pill:hover {
+    background: var(--sisa-tint-blue);
+    color: var(--sisa-icon-blue);
+    border-color: var(--sisa-icon-blue);
+}
+
+.ev-page-icon {
     width: 2.75rem;
     height: 2.75rem;
     border-radius: .75rem;
-    background: var(--sisa-tint-amber);
-    color: var(--sisa-icon-amber);
-    font-size: 1.2rem;
+    background: linear-gradient(135deg, var(--sisa-primary) 0%, var(--sisa-primary-l) 100%);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+    flex-shrink: 0;
+    box-shadow: 0 4px 12px rgba(15, 60, 97, .3);
+}
+
+.ev-header-title {
+    display: flex;
+    align-items: center;
+    gap: .625rem;
+    min-width: 0;
+}
+
+.ev-num-badge {
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: .5rem;
+    background: linear-gradient(135deg, var(--sisa-primary) 0%, var(--sisa-primary-l) 100%);
+    color: #fff;
+    font-size: .875rem;
+    font-weight: 800;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     flex-shrink: 0;
 }
 
-.page-title {
+.ev-title {
     margin: 0;
-    font-size: 1.25rem;
+    font-size: 1.1rem;
     font-weight: 700;
     color: var(--p-text-color);
-    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
-.page-subtitle {
+.ev-subtitle {
+    display: flex;
+    align-items: center;
+    gap: .375rem;
+    flex-wrap: wrap;
+    margin: .25rem 0 0;
+}
+
+.ev-subtitle-plain {
     margin: .15rem 0 0;
     font-size: .82rem;
     color: var(--p-text-muted-color);
 }
 
-.periodo-select {
-    min-width: 220px;
-}
-
-/* ══════════════════════════════════
-   STATS STRIP
-══════════════════════════════════ */
-.stats-strip {
-    display: flex;
-    gap: 1rem;
-    margin-bottom: 1.25rem;
-    flex-wrap: wrap;
-}
-
-.stat-item {
-    display: flex;
+.stat-pill {
+    display: inline-flex;
     align-items: center;
-    gap: .75rem;
-    padding: .75rem 1.25rem;
-    border-radius: .75rem;
-    background: var(--p-content-background);
-    border: 1px solid var(--p-content-border-color);
-    flex: 1;
-    min-width: 120px;
-}
-
-.stat-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 2.25rem;
-    height: 2.25rem;
-    border-radius: .5rem;
-    font-size: 1rem;
-    flex-shrink: 0;
-}
-
-.stat-icon.blue   { background: var(--sisa-tint-blue);  color: var(--sisa-icon-blue);  }
-.stat-icon.green  { background: var(--sisa-tint-green); color: var(--sisa-icon-green); }
-.stat-icon.amber  { background: var(--sisa-tint-amber); color: var(--sisa-icon-amber); }
-
-.stat-label {
-    margin: 0;
-    font-size: .65rem;
+    gap: .3rem;
+    padding: .15rem .55rem;
+    border-radius: 99px;
+    font-size: .72rem;
     font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: .06em;
-    color: var(--p-text-muted-color);
 }
+.stat-pill--green { background: var(--sisa-tint-green); color: var(--sisa-icon-green); }
+.stat-pill--blue  { background: var(--sisa-tint-blue);  color: var(--sisa-icon-blue);  }
+.stat-pill--amber { background: var(--sisa-tint-amber); color: var(--sisa-icon-amber); }
 
-.stat-value {
-    margin: .1rem 0 0;
-    font-size: 1.4rem;
-    font-weight: 700;
-    color: var(--p-text-color);
-    line-height: 1;
-}
+.ev-periodo-select { min-width: 210px; }
 
-/* ══════════════════════════════════
-   FILTER BAR
-══════════════════════════════════ */
-.filter-bar {
-    display: flex;
-    align-items: center;
-    gap: .75rem;
-    margin-bottom: 1.25rem;
-    flex-wrap: wrap;
-}
-
-.search-field {
-    flex: 1;
-    min-width: 200px;
-}
-
-.search-field :deep(.p-inputtext) {
-    width: 100%;
-}
-
-.filter-select {
-    min-width: 160px;
-}
-
-/* ══════════════════════════════════
-   EMPTY STATE
-══════════════════════════════════ */
-.empty-state {
+/* ═══════════════════════════════════════
+   LOADING / EMPTY
+═══════════════════════════════════════ */
+.ev-loading,
+.ev-empty {
     display: flex;
     flex-direction: column;
     align-items: center;
+    gap: .875rem;
+    padding: 5rem 2rem;
+    font-size: .9rem;
+    color: var(--p-text-muted-color);
+}
+.ev-empty-icon { font-size: 2.5rem; opacity: .2; }
+
+.ev-spinner {
+    width: 2rem;
+    height: 2rem;
+    border: 3px solid var(--p-content-border-color);
+    border-top-color: var(--sisa-primary-l);
+    border-radius: 50%;
+    animation: ev-spin .7s linear infinite;
+}
+.ev-spinner--sm { width: 1.1rem; height: 1.1rem; border-width: 2px; }
+
+@keyframes ev-spin { to { transform: rotate(360deg); } }
+
+/* ═══════════════════════════════════════
+   DASHBOARD GRID
+═══════════════════════════════════════ */
+.ev-cards-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
     gap: 1rem;
-    padding: 4rem 2rem;
+}
+
+/* ═══════════════════════════════════════
+   CARD ENTREGABLE
+═══════════════════════════════════════ */
+.ev-card {
+    background: var(--p-content-background);
+    border: 1px solid var(--p-content-border-color);
+    border-left: 4px solid var(--card-accent);
+    border-radius: .875rem;
+    padding: 1.25rem;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    gap: .875rem;
+    transition: transform .18s, box-shadow .18s;
+    position: relative;
+    overflow: hidden;
+}
+
+.ev-card::before {
+    content: '';
+    position: absolute;
+    top: 0; right: 0;
+    width: 80px; height: 80px;
+    background: var(--card-tint);
+    border-radius: 0 .875rem 0 80px;
+    opacity: .5;
+    pointer-events: none;
+}
+
+.ev-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 28px rgba(0,0,0,.11);
+    border-color: var(--card-accent);
+}
+
+.ev-card-head {
+    display: flex;
+    align-items: flex-start;
+    gap: .75rem;
+}
+
+.ev-card-num {
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: .5rem;
+    background: var(--card-tint);
+    color: var(--card-icon);
+    font-size: .95rem;
+    font-weight: 900;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.ev-card-head-text { flex: 1; min-width: 0; }
+
+.ev-card-nombre {
+    margin: 0;
+    font-size: .975rem;
+    font-weight: 700;
+    color: var(--p-text-color);
+    line-height: 1.3;
+    text-wrap: balance;
+}
+
+.ev-card-desc {
+    margin: .25rem 0 0;
+    font-size: .78rem;
+    color: var(--p-text-muted-color);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    line-height: 1.45;
+}
+
+.ev-card-fecha {
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+    font-size: .78rem;
+    color: var(--p-text-muted-color);
+    flex-wrap: wrap;
+}
+
+.vencido-pill {
+    background: var(--sisa-tint-red);
+    color: var(--sisa-icon-red);
+    border-radius: 99px;
+    padding: .1rem .45rem;
+    font-size: .65rem;
+    font-weight: 700;
+}
+
+/* Stats 2×2 */
+.ev-stats-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: .5rem;
+}
+
+.ev-stat {
+    background: var(--p-surface-50, #f8fafc);
+    border: 1px solid var(--p-content-border-color);
+    border-radius: .5rem;
+    padding: .5rem .625rem;
+    display: flex;
+    flex-direction: column;
+    gap: .15rem;
+}
+
+.ev-stat--blue  { background: var(--sisa-tint-blue);  border-color: transparent; }
+.ev-stat--amber { background: var(--sisa-tint-amber); border-color: transparent; }
+.ev-stat--red   { background: var(--sisa-tint-red);   border-color: transparent; }
+
+.ev-stat-num {
+    font-size: 1.4rem;
+    font-weight: 800;
+    color: var(--p-text-color);
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+}
+.ev-stat-num em { font-size: .75rem; font-style: normal; color: var(--p-text-muted-color); font-weight: 500; }
+
+.ev-stat--blue  .ev-stat-num { color: var(--sisa-icon-blue);  }
+.ev-stat--amber .ev-stat-num { color: var(--sisa-icon-amber); }
+.ev-stat--red   .ev-stat-num { color: var(--sisa-icon-red);   }
+
+.ev-stat-lbl {
+    font-size: .68rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .04em;
     color: var(--p-text-muted-color);
 }
 
-.empty-icon {
-    font-size: 3rem;
-    opacity: .3;
-}
-
-.empty-text {
-    margin: 0;
-    font-size: .95rem;
-}
-
-/* ══════════════════════════════════
-   TABLE PANEL
-══════════════════════════════════ */
-.table-panel {
-    border-radius: .75rem;
-    border: 1px solid var(--p-content-border-color);
-    overflow: hidden;
-    background: var(--p-content-background);
-}
-
-/* ── Alumno cell ──────────────── */
-.alumno-cell {
+/* Progress track */
+.ev-track-wrap {
     display: flex;
     align-items: center;
-    gap: .65rem;
+    gap: .625rem;
 }
 
-.alumno-avatar {
+.ev-track {
+    flex: 1;
+    height: 5px;
+    background: var(--p-content-border-color);
+    border-radius: 99px;
+    overflow: hidden;
+}
+
+.ev-track-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--sisa-primary) 0%, var(--sisa-primary-l) 100%);
+    border-radius: 99px;
+    transition: width .4s ease;
+}
+
+.ev-track-pct {
+    font-size: .72rem;
+    font-weight: 700;
+    color: var(--p-text-muted-color);
+    font-variant-numeric: tabular-nums;
+    min-width: 2.5rem;
+    text-align: right;
+}
+
+.ev-card-cta {
     display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: .35rem;
+    font-size: .78rem;
+    font-weight: 700;
+    color: var(--sisa-primary-l);
+    opacity: 0;
+    transition: opacity .2s;
+}
+.ev-card:hover .ev-card-cta { opacity: 1; }
+
+/* ═══════════════════════════════════════
+   CLASSROOM LAYOUT
+═══════════════════════════════════════ */
+.ev-classroom {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    gap: 1rem;
+    height: calc(100vh - 185px);
+    min-height: 520px;
+}
+
+/* ── Left panel ── */
+.ev-students {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--p-content-border-color);
+    border-radius: .875rem;
+    background: var(--p-content-background);
+    overflow: hidden;
+}
+
+.ev-students-head {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--p-content-background);
+    border-bottom: 1px solid var(--p-content-border-color);
+}
+
+.ev-search-wrap {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    padding: .75rem .875rem;
+    border-bottom: 1px solid var(--p-content-border-color);
+}
+
+.ev-search-icon { font-size: .8rem; color: var(--p-text-muted-color); flex-shrink: 0; }
+
+.ev-search-input {
+    flex: 1;
+    border: none;
+    outline: none;
+    background: transparent;
+    font-size: .85rem;
+    color: var(--p-text-color);
+    font-family: inherit;
+}
+
+.ev-search-clear {
+    border: none;
+    background: none;
+    cursor: pointer;
+    color: var(--p-text-muted-color);
+    padding: 0;
+    font-size: .75rem;
+    line-height: 1;
+    transition: color .15s;
+    font-family: inherit;
+}
+.ev-search-clear:hover { color: var(--sisa-icon-red); }
+
+.ev-tabs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+}
+
+.ev-tab {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: .35rem;
+    padding: .65rem .5rem;
+    font-size: .75rem;
+    font-weight: 600;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    color: var(--p-text-muted-color);
+    border-bottom: 2.5px solid transparent;
+    transition: all .15s;
+    font-family: inherit;
+}
+
+.ev-tab--active {
+    color: var(--sisa-primary-l);
+    border-bottom-color: var(--sisa-primary-l);
+    background: var(--sisa-tint-blue);
+}
+
+.ev-tab-count {
+    border-radius: 99px;
+    padding: .05rem .4rem;
+    font-size: .68rem;
+    font-weight: 800;
+    line-height: 1.6;
+}
+.ev-tab-count--green { background: var(--sisa-tint-green); color: var(--sisa-icon-green); }
+.ev-tab-count--red   { background: var(--sisa-tint-red);   color: var(--sisa-icon-red);   }
+
+.ev-student-list {
+    flex: 1;
+    overflow-y: auto;
+}
+
+.ev-student-list::-webkit-scrollbar { width: 4px; }
+.ev-student-list::-webkit-scrollbar-thumb {
+    background: var(--p-content-border-color);
+    border-radius: 99px;
+}
+
+.ev-list-state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: .5rem;
+    padding: 2.5rem 1rem;
+    font-size: .85rem;
+    color: var(--p-text-muted-color);
+}
+
+.ev-student-row {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    padding: .7rem .875rem;
+    border: none;
+    border-bottom: 1px solid var(--p-content-border-color);
+    background: transparent;
+    cursor: pointer;
+    text-align: left;
+    font-family: inherit;
+    transition: background .12s;
+}
+.ev-student-row:hover    { background: var(--p-surface-50, #f8fafc); }
+.ev-student-row--active  {
+    background: var(--sisa-accent-surface, #f0f7ff) !important;
+    border-left: 3px solid var(--sisa-primary-l);
+    padding-left: calc(.875rem - 3px);
+}
+
+.ev-av {
+    width: 2.1rem;
+    height: 2.1rem;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--sisa-primary) 0%, var(--sisa-primary-l) 100%);
+    color: #fff;
+    font-size: .8rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.ev-student-info { flex: 1; min-width: 0; }
+
+.ev-student-name {
+    margin: 0;
+    font-size: .84rem;
+    font-weight: 600;
+    color: var(--p-text-color);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ev-student-meta {
+    margin: .1rem 0 0;
+    font-size: .72rem;
+    color: var(--p-text-muted-color);
+}
+
+.ev-student-right { flex-shrink: 0; }
+
+.ev-cal-badge {
+    display: inline-flex;
     align-items: center;
     justify-content: center;
     width: 2rem;
     height: 2rem;
     border-radius: 50%;
-    background: var(--sisa-tint-blue);
-    color: var(--sisa-icon-blue);
     font-size: .8rem;
-    font-weight: 700;
-    flex-shrink: 0;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+}
+.cal-a { background: var(--sisa-tint-green); color: var(--sisa-icon-green); }
+.cal-b { background: var(--sisa-tint-blue);  color: var(--sisa-icon-blue);  }
+.cal-c { background: var(--sisa-tint-amber); color: var(--sisa-icon-amber); }
+.cal-f { background: var(--sisa-tint-red);   color: var(--sisa-icon-red);   }
+
+.ev-pending-dot { font-size: .8rem; color: var(--sisa-icon-amber); }
+
+/* ── Right panel ── */
+.ev-submission {
+    border: 1px solid var(--p-content-border-color);
+    border-radius: .875rem;
+    background: var(--p-content-background);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
 }
 
-.alumno-nombre {
-    margin: 0;
-    font-size: .88rem;
-    font-weight: 600;
-    color: var(--p-text-color);
-}
-
-.alumno-carrera {
-    margin: .1rem 0 0;
-    font-size: .75rem;
-    color: var(--p-text-muted-color);
-}
-
-/* ── Matricula chip ───────────── */
-.matricula-chip {
-    font-size: .8rem;
-    font-weight: 600;
-    padding: .2rem .55rem;
-    border-radius: .35rem;
+.ev-submission::-webkit-scrollbar { width: 4px; }
+.ev-submission::-webkit-scrollbar-thumb {
     background: var(--p-content-border-color);
-    color: var(--p-text-color);
-    font-family: monospace;
+    border-radius: 99px;
 }
 
-/* ── Entregable name ──────────── */
-.entregable-name {
-    font-weight: 500;
-    font-size: .88rem;
-    color: var(--p-text-color);
-}
-
-/* ── Fecha ────────────────────── */
-.fecha-text {
-    font-size: .82rem;
-    color: var(--p-text-muted-color);
-}
-
-/* ── Calificación badge ─────── */
-.calificacion-badge {
-    display: inline-flex;
+.ev-sub-empty {
+    display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
-    width: 2.2rem;
-    height: 2.2rem;
-    border-radius: 50%;
-    font-weight: 700;
-    font-size: .88rem;
-}
-
-.cal-pass {
-    background: var(--sisa-tint-green);
-    color: var(--sisa-icon-green);
-}
-
-.cal-fail {
-    background: var(--sisa-tint-red);
-    color: var(--sisa-icon-red);
-}
-
-.calificacion-empty {
+    gap: 1rem;
+    flex: 1;
+    padding: 3rem;
     color: var(--p-text-muted-color);
     font-size: .9rem;
 }
 
-/* ══════════════════════════════════
-   EVALUATION DIALOG
-══════════════════════════════════ */
-.eval-form {
-    display: flex;
-    flex-direction: column;
-    gap: 1.25rem;
-}
-
-/* Info header */
-.eval-info-header {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    padding: 1rem;
-    border-radius: .75rem;
-    background: var(--sisa-tint-blue);
-    border: 1px solid var(--p-content-border-color);
-}
-
-.eval-avatar {
+.ev-sub-empty-icon {
+    width: 4rem;
+    height: 4rem;
+    border-radius: 50%;
+    border: 2px dashed var(--p-content-border-color);
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 3rem;
-    height: 3rem;
-    border-radius: 50%;
-    background: var(--sisa-icon-blue);
-    color: #fff;
-    font-size: 1.15rem;
-    font-weight: 700;
+    font-size: 1.5rem;
+    opacity: .3;
+}
+
+.ev-sub-header {
+    display: flex;
+    align-items: center;
+    gap: .875rem;
+    padding: 1rem 1.25rem;
+    background: linear-gradient(135deg, var(--sisa-tint-blue) 0%, var(--p-content-background) 80%);
+    border-bottom: 1px solid var(--p-content-border-color);
     flex-shrink: 0;
 }
 
-.eval-alumno-name {
+.ev-sub-av {
+    width: 3rem;
+    height: 3rem;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--sisa-primary) 0%, var(--sisa-primary-l) 100%);
+    color: #fff;
+    font-size: 1.1rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    box-shadow: 0 2px 8px rgba(15,60,97,.25);
+}
+
+.ev-sub-header-text { flex: 1; min-width: 0; }
+
+.ev-sub-nombre {
     margin: 0;
-    font-size: 1rem;
+    font-size: .95rem;
     font-weight: 700;
     color: var(--p-text-color);
 }
 
-.eval-alumno-meta {
-    margin: .2rem 0 0;
-    font-size: .8rem;
+.ev-sub-meta {
+    margin: .15rem 0 0;
+    font-size: .78rem;
     color: var(--p-text-muted-color);
 }
 
-/* Form grid */
-.eval-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 1.25rem;
+.ev-sub-envio {
+    display: flex;
+    align-items: center;
+    gap: .375rem;
+    font-size: .73rem;
+    color: var(--p-text-muted-color);
+    flex-shrink: 0;
+    background: var(--p-content-background);
+    border: 1px solid var(--p-content-border-color);
+    border-radius: 99px;
+    padding: .3rem .7rem;
+    white-space: nowrap;
 }
 
-.field {
+.ev-no-entry {
     display: flex;
     flex-direction: column;
-    gap: .45rem;
+    align-items: center;
+    gap: .625rem;
+    padding: 3rem;
+    font-size: .875rem;
+    color: var(--p-text-muted-color);
+}
+.ev-no-entry i { font-size: 2rem; opacity: .2; }
+
+.ev-sub-body {
+    display: flex;
+    flex-direction: column;
+    gap: 1.125rem;
+    padding: 1.25rem;
+    flex: 1;
 }
 
-.field-label {
-    font-size: .78rem;
+.ev-sub-section { display: flex; flex-direction: column; gap: .5rem; }
+
+.ev-sub-label {
+    display: flex;
+    align-items: center;
+    gap: .35rem;
+    font-size: .72rem;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: .05em;
     color: var(--p-text-muted-color);
-    display: flex;
+}
+
+.ev-file-link {
+    display: inline-flex;
     align-items: center;
     gap: .4rem;
+    font-size: .875rem;
+    font-weight: 600;
+    color: var(--sisa-primary-l);
+    text-decoration: none;
+    padding: .625rem 1rem;
+    border: 1px solid var(--p-content-border-color);
+    border-radius: .5rem;
+    width: fit-content;
+    transition: all .15s;
+}
+.ev-file-link:hover {
+    background: var(--sisa-tint-blue);
+    border-color: var(--sisa-icon-blue);
+    transform: translateY(-1px);
 }
 
-.full-field {
-    grid-column: 1 / 3;
-}
+.ev-no-file { font-size: .85rem; color: var(--p-text-muted-color); }
 
-.dialog-footer {
+.ev-grade-input-wrap {
     display: flex;
-    justify-content: flex-end;
+    gap: .625rem;
+    align-items: flex-start;
+}
+
+.ev-grade-input { flex: 1; }
+
+.ev-save-btn { flex-shrink: 0; align-self: stretch; }
+
+.ev-obs-area { font-size: .85rem; border-radius: .5rem; }
+
+/* Comments */
+.ev-comments {
+    background: var(--p-surface-50, #f8fafc);
+    border: 1px solid var(--p-content-border-color);
+    border-radius: .75rem;
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
     gap: .75rem;
 }
 
-/* ══════════════════════════════════
-   RESPONSIVE
-══════════════════════════════════ */
-@media (max-width: 768px) {
-    .page-header {
-        flex-direction: column;
-        align-items: flex-start;
-    }
+.ev-comments-head {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+}
 
-    .periodo-select {
-        width: 100%;
-    }
+.ev-comments-count {
+    background: var(--sisa-tint-blue);
+    color: var(--sisa-icon-blue);
+    border-radius: 99px;
+    padding: .05rem .45rem;
+    font-size: .68rem;
+    font-weight: 800;
+    line-height: 1.6;
+}
 
-    .filter-bar {
-        flex-direction: column;
-        align-items: stretch;
-    }
+.ev-comments-state {
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+    font-size: .82rem;
+    color: var(--p-text-muted-color);
+}
 
-    .search-field,
-    .filter-select {
-        width: 100%;
-        min-width: unset;
-    }
+.ev-comments-list {
+    display: flex;
+    flex-direction: column;
+    gap: .4rem;
+    max-height: 200px;
+    overflow-y: auto;
+    padding-right: .25rem;
+}
 
-    .stats-strip {
-        flex-direction: column;
-    }
+.ev-comments-list::-webkit-scrollbar { width: 3px; }
+.ev-comments-list::-webkit-scrollbar-thumb {
+    background: var(--p-content-border-color);
+    border-radius: 99px;
+}
 
-    .eval-grid {
+.ev-comment {
+    padding: .625rem .75rem;
+    border-radius: .5rem;
+    background: var(--p-content-background);
+    border: 1px solid var(--p-content-border-color);
+    border-left: 3px solid transparent;
+}
+.ev-comment--admin  { border-left-color: var(--sisa-primary-l); }
+.ev-comment--alumno { border-left-color: var(--sisa-icon-green); }
+
+.ev-comment-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .5rem;
+    margin-bottom: .25rem;
+}
+
+.ev-comment-autor {
+    display: flex;
+    align-items: center;
+    gap: .35rem;
+    font-size: .75rem;
+    font-weight: 700;
+    color: var(--p-text-color);
+}
+
+.ev-comment-role-dot {
+    width: .45rem;
+    height: .45rem;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+.dot-admin  { background: var(--sisa-primary-l); }
+.dot-alumno { background: var(--sisa-icon-green); }
+
+.ev-comment-rol {
+    padding: .1rem .4rem;
+    border-radius: 99px;
+    font-size: .65rem;
+    font-weight: 600;
+}
+.rol-admin  { background: var(--sisa-tint-purple); color: var(--sisa-icon-purple); }
+.rol-alumno { background: var(--sisa-tint-blue);   color: var(--sisa-icon-blue);   }
+
+.ev-comment-actions {
+    display: flex;
+    align-items: center;
+    gap: .25rem;
+}
+
+.ev-comment-fecha { font-size: .68rem; color: var(--p-text-muted-color); }
+
+.ev-comment-del {
+    border: none;
+    background: none;
+    cursor: pointer;
+    color: var(--sisa-icon-red);
+    padding: .1rem .25rem;
+    border-radius: .25rem;
+    font-size: .72rem;
+    opacity: 0;
+    transition: opacity .15s;
+    font-family: inherit;
+}
+.ev-comment:hover .ev-comment-del { opacity: .7; }
+.ev-comment-del:hover { opacity: 1 !important; }
+
+.ev-comment-text {
+    font-size: .82rem;
+    color: var(--p-text-color);
+    margin: 0;
+    line-height: 1.45;
+    white-space: pre-wrap;
+}
+
+.ev-comment-new {
+    display: flex;
+    flex-direction: column;
+    gap: .5rem;
+    border-top: 1px solid var(--p-content-border-color);
+    padding-top: .75rem;
+}
+
+.ev-comment-ta { font-size: .82rem; border-radius: .5rem; }
+.ev-send-btn   { align-self: flex-end; }
+
+/* ═══════════════════════════════════════
+   RESPONSIVE — TABLET
+═══════════════════════════════════════ */
+/* Botón back — oculto en desktop, visible en mobile */
+.ev-back-btn {
+    display: none;
+    align-items: center;
+    gap: .4rem;
+    background: none;
+    border: none;
+    color: var(--sisa-primary-l);
+    font-size: .875rem;
+    font-weight: 600;
+    cursor: pointer;
+    padding: .75rem 1rem .25rem;
+    transition: opacity .15s;
+}
+.ev-back-btn:hover { opacity: .7; }
+
+@media (max-width: 960px) {
+    .ev-classroom {
         grid-template-columns: 1fr;
+        grid-template-rows: 1fr;   /* solo un panel visible a la vez */
+        height: calc(100dvh - 160px);
+        min-height: unset;
     }
 
-    .full-field {
-        grid-column: auto;
+    /* Master-detail: ocultar el panel inactivo en mobile */
+    .ev-panel--hidden-mobile {
+        display: none !important;
     }
+
+    /* El panel visible ocupa toda la altura */
+    .ev-students,
+    .ev-submission {
+        max-height: none;
+        min-height: none;
+        height: 100%;
+    }
+
+    .ev-back-btn { display: flex; }
+}
+
+/* ═══════════════════════════════════════
+   RESPONSIVE — MOBILE
+═══════════════════════════════════════ */
+@media (max-width: 640px) {
+    .ev-page      { padding: 1rem; gap: 1rem; }
+    .ev-header    { flex-direction: column; align-items: flex-start; }
+    .ev-periodo-select { width: 100%; }
+    .ev-cards-grid { grid-template-columns: 1fr; }
+
+    .ev-header-title { flex-wrap: wrap; }
+
+    .ev-students { max-height: none; }
+    .ev-sub-header { flex-wrap: wrap; }
+    .ev-sub-envio  { order: 3; flex-basis: 100%; justify-content: flex-start; }
+
+    .ev-grade-input-wrap { flex-direction: column; }
+    .ev-save-btn { width: 100%; }
+
+    .ev-students { max-height: 320px; }
 }
 </style>

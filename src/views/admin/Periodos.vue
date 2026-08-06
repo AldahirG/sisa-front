@@ -2,7 +2,7 @@
 import api from '@/api/axios';
 import { useDescargarReporte } from '@/composables/useDescargarReporte';
 import { useConfirm } from 'primevue/useconfirm';
-import { useToast } from 'primevue/usetoast';
+import { useToast } from '@/composables/useAppToast';
 import { onMounted, reactive, ref } from 'vue';
 
 // PrimeVue
@@ -11,6 +11,7 @@ import ConfirmDialog from 'primevue/confirmdialog';
 import DatePicker from 'primevue/datepicker';
 import Dialog from 'primevue/dialog';
 import InputText from 'primevue/inputtext';
+import Select from 'primevue/select';
 import Tag from 'primevue/tag';
 import Toast from 'primevue/toast';
 
@@ -26,13 +27,19 @@ const loading = ref(false);
 const dialogVisible = ref(false);
 const isEdit = ref(false);
 
+const SEMESTRES = Array.from({ length: 10 }, (_, i) => ({
+    label: `${i + 1}° Semestre`,
+    value: i + 1
+}));
+
 const periodoForm = ref({
     id_periodo: null,
     nombre: '',
     programa: '',
     fecha_inicio: null,
     fecha_fin: null,
-    estado: 'cerrado'
+    estado: 'cerrado',
+    semestre: null
 });
 
 // =======================
@@ -80,7 +87,8 @@ const openNew = () => {
         programa: '',
         fecha_inicio: null,
         fecha_fin: null,
-        estado: 'cerrado'
+        estado: 'cerrado',
+        semestre: null
     };
     dialogVisible.value = true;
 };
@@ -90,7 +98,8 @@ const editPeriodo = (p) => {
     periodoForm.value = {
         ...p,
         fecha_inicio: p.fecha_inicio ? new Date(p.fecha_inicio + 'T00:00:00') : null,
-        fecha_fin: p.fecha_fin ? new Date(p.fecha_fin + 'T00:00:00') : null
+        fecha_fin: p.fecha_fin ? new Date(p.fecha_fin + 'T00:00:00') : null,
+        semestre: p.semestre ?? null
     };
     dialogVisible.value = true;
 };
@@ -131,24 +140,33 @@ const savePeriodo = async () => {
 };
 
 // =======================
+// ELIMINAR
+// =======================
+const eliminarPeriodo = (p) => {
+    confirm.require({
+        message: `¿Estás seguro de que deseas eliminar el periodo "${p.nombre}"? Esta acción no se puede deshacer.`,
+        header: 'Eliminar período',
+        icon: 'pi pi-exclamation-triangle',
+        acceptLabel: 'Eliminar',
+        rejectLabel: 'Cancelar',
+        acceptClass: 'p-button-danger',
+        accept: async () => {
+            try {
+                await api.delete(`/periodos/${p.id_periodo}`);
+                toast.add({ severity: 'success', summary: 'Eliminado', detail: 'Periodo eliminado correctamente', life: 3000 });
+                loadPeriodos();
+            } catch (e) {
+                const detail = e?.response?.data?.message || 'No se pudo eliminar el periodo';
+                toast.add({ severity: 'error', summary: 'Error', detail, life: 5000 });
+            }
+        }
+    });
+};
+
+// =======================
 // ACTIVAR / CERRAR
 // =======================
 const toggleEstado = (periodo) => {
-    const yaHayActivo = periodos.value.some(
-        (p) => p.estado === 'activo' && p.id_periodo !== periodo.id_periodo
-    );
-    const quiereActivar = periodo.estado !== 'activo';
-
-    if (quiereActivar && yaHayActivo) {
-        toast.add({
-            severity: 'warn',
-            summary: 'Periodo activo existente',
-            detail: 'Ya existe un periodo activo. Ciérralo antes de activar otro.',
-            life: 5000
-        });
-        return;
-    }
-
     const nuevoEstado = periodo.estado === 'activo' ? 'cerrado' : 'activo';
     const accion = nuevoEstado === 'activo' ? 'activar' : 'cerrar';
 
@@ -307,6 +325,13 @@ const ejecutarDescarga = async () => {
                         <span>{{ p.programa }}</span>
                     </div>
 
+                    <!-- Semestre -->
+                    <div class="card-meta">
+                        <i class="pi pi-users meta-icon" />
+                        <span v-if="p.semestre" class="nivel-chip">{{ p.semestre }}° Semestre</span>
+                        <span v-else class="nivel-chip nivel-chip--none">Todos los semestres</span>
+                    </div>
+
                     <!-- Dates -->
                     <div class="card-dates">
                         <div class="date-item">
@@ -336,6 +361,14 @@ const ejecutarDescarga = async () => {
                             :severity="p.estado === 'activo' ? 'warning' : 'success'"
                             text
                             @click="toggleEstado(p)"
+                        />
+                        <Button
+                            icon="pi pi-trash"
+                            label="Eliminar"
+                            size="small"
+                            severity="danger"
+                            text
+                            @click="eliminarPeriodo(p)"
                         />
                     </div>
 
@@ -425,6 +458,22 @@ const ejecutarDescarga = async () => {
                         showIcon
                         dateFormat="dd/mm/yy"
                         :minDate="periodoForm.fecha_inicio"
+                        class="w-full"
+                    />
+                </div>
+
+                <div class="field field--full">
+                    <label class="field-label">
+                        <i class="pi pi-users" />
+                        Semestre
+                    </label>
+                    <Select
+                        v-model="periodoForm.semestre"
+                        :options="SEMESTRES"
+                        optionLabel="label"
+                        optionValue="value"
+                        placeholder="Todos los semestres"
+                        showClear
                         class="w-full"
                     />
                 </div>
@@ -793,6 +842,26 @@ const ejecutarDescarga = async () => {
     display: flex;
     justify-content: flex-end;
     gap: .75rem;
+}
+
+.field--full {
+    grid-column: 1 / -1;
+}
+
+/* Semestre chip on card */
+.nivel-chip {
+    font-size: .78rem;
+    font-weight: 600;
+    color: var(--sisa-icon-blue, #1565C0);
+    background: var(--sisa-tint-blue, rgba(21,101,192,.08));
+    padding: .15rem .5rem;
+    border-radius: 20px;
+}
+
+.nivel-chip--none {
+    color: var(--p-text-muted-color);
+    background: var(--p-surface-100);
+    font-weight: 400;
 }
 
 /* ══════════════════════════════════

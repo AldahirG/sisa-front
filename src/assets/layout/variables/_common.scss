@@ -49,6 +49,18 @@
     /* Superficie de acento (cards con highlight suave) */
     --sisa-accent-surface: #f0f7ff;
 
+    /* ── Animaciones globales SISA ─────────────────────────── */
+    --sisa-ease-out:    cubic-bezier(0.16, 1, 0.3, 1);
+    --sisa-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+    --sisa-dur-fast:    120ms;
+    --sisa-dur-base:    200ms;
+    --sisa-dur-slow:    320ms;
+
+    /* Glass surface */
+    --sisa-glass-bg:     rgba(255, 255, 255, 0.82);
+    --sisa-glass-border: rgba(255, 255, 255, 0.55);
+    --sisa-glass-blur:   blur(18px) saturate(180%);
+
     /* Banners de estado — light mode */
     --sisa-banner-danger-bg:  #fff5f5;
     --sisa-banner-danger-bd:  #fca5a5;

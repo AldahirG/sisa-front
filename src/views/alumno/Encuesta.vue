@@ -5,11 +5,12 @@ import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import Textarea from 'primevue/textarea';
 import Toast from 'primevue/toast';
-import { useToast } from 'primevue/usetoast';
+import { useToast } from '@/composables/useAppToast';
 
 const toast   = useToast();
-const estado  = ref('loading'); // loading | sin-encuesta | respondida | activa | error
+const estado  = ref('loading'); // loading | sin-encuesta | seleccion | respondida | activa | error
 const encuesta = ref(null);
+const listaEncuestas = ref([]);
 const enviando = ref(false);
 
 // Flat map: { [id_pregunta]: null | number | string | string[] }
@@ -28,26 +29,20 @@ const preguntas = computed(() =>
 // IDs de preguntas visibles — el payload solo envía estas
 const preguntasIds = computed(() => new Set(preguntas.value.map((p) => p.id_pregunta)));
 
-// INC-18: skip-logic para apoyo económico
-// Si "¿Recibiste apoyo económico?" = "No", ocultar preguntas de seguimiento
-const apoyoEconId = computed(() =>
-    preguntas.value.find(
-        (p) => p.texto?.toLowerCase().includes('recibiste apoyo económico')
-    )?.id_pregunta ?? null
-);
-
+// Skip-logic genérico basado en condicion_pregunta_id / condicion_respuesta
 const idsOcultasPorSkip = computed(() => {
-    if (!apoyoEconId.value) return new Set();
-    if (respuestas.value[apoyoEconId.value] !== 'No') return new Set();
-    return new Set(
-        preguntas.value
-            .filter(
-                (p) =>
-                    p.id_pregunta !== apoyoEconId.value &&
-                    p.texto?.toLowerCase().includes('apoyo económico')
-            )
-            .map((p) => p.id_pregunta)
-    );
+    const hidden = new Set();
+    for (const p of preguntas.value) {
+        if (!p.condicion_pregunta_id) continue;
+        const respPadre = respuestas.value[p.condicion_pregunta_id];
+        const valorActual = typeof respPadre === 'string'
+            ? respPadre.trim()
+            : (respPadre !== null && respPadre !== undefined ? String(respPadre) : '');
+        if (valorActual !== (p.condicion_respuesta ?? '').trim()) {
+            hidden.add(p.id_pregunta);
+        }
+    }
+    return hidden;
 });
 
 const preguntasVisibles = computed(() =>
@@ -55,6 +50,11 @@ const preguntasVisibles = computed(() =>
 );
 
 const totalPreguntas = computed(() => preguntasVisibles.value.length);
+
+// Solo las visibles que son obligatorias deben responderse para habilitar envío
+const preguntasObligatorias = computed(() =>
+    preguntasVisibles.value.filter((p) => p.requerida !== false && p.tipo !== 'autocompletado')
+);
 
 // Normaliza las opciones de una pregunta.
 // Acepta CUALQUIER forma en que el backend pueda devolverlas:
@@ -105,8 +105,14 @@ const pctProgreso = computed(() =>
     totalPreguntas.value ? Math.round((respondidas.value / totalPreguntas.value) * 100) : 0
 );
 
+// "Listo para enviar" = todas las OBLIGATORIAS respondidas (opcionales pueden quedar vacías)
+const obligatoriasRespondidas = computed(() =>
+    preguntasObligatorias.value.filter(isAnswered).length
+);
+
 const todasRespondidas = computed(() =>
-    respondidas.value === totalPreguntas.value && totalPreguntas.value > 0
+    preguntasObligatorias.value.length > 0 &&
+    obligatoriasRespondidas.value === preguntasObligatorias.value.length
 );
 
 // El payload excluye las preguntas ocultas por skip-logic
@@ -114,27 +120,47 @@ const preguntasParaEnviar = computed(() =>
     preguntasVisibles.value.filter((p) => preguntasIds.value.has(p.id_pregunta))
 );
 
-// ─── Carga ────────────────────────────────────────────────────────────────────
+// ─── Carga lista de encuestas ─────────────────────────────────────────────────
 async function cargarEncuesta() {
     estado.value = 'loading';
     try {
-        const { data } = await api.get('/encuestas/mi-encuesta');
+        const { data } = await api.get('/encuestas/mis-encuestas');
+        listaEncuestas.value = data;
+
+        if (data.length === 1) {
+            // Una sola encuesta: cargar directamente
+            await seleccionarEncuesta(data[0].id_encuesta);
+        } else {
+            estado.value = 'seleccion';
+        }
+    } catch (err) {
+        const status = err.response?.status;
+        if (status === 403) {
+            estado.value = 'sin-empresa';
+        } else if (status === 404 || status === 400) {
+            estado.value = 'sin-encuesta';
+        } else {
+            estado.value = 'error';
+        }
+    }
+}
+
+// ─── Seleccionar y cargar encuesta específica ─────────────────────────────────
+async function seleccionarEncuesta(id_encuesta) {
+    estado.value = 'loading';
+    try {
+        const { data } = await api.get(`/encuestas/mi-encuesta/${id_encuesta}`);
         encuesta.value = data;
 
         if (data.ya_respondida) {
             estado.value = 'respondida';
         } else {
-            // encuesta.value ya está asignado arriba, el computed `preguntas`
-            // filtra automáticamente las inactivas. Iteramos sobre ese computed.
             const init = {};
-            // Accedemos directamente al array raw para inicializar antes de que
-            // el computed reactive se actualice en el mismo tick.
             const activas = (data.preguntas ?? []).filter(
                 (p) => p.activa !== false && p.texto?.trim()
             );
             activas.forEach((p) => {
                 if (p.tipo === 'autocompletado') {
-                    // El backend pre-rellena desde el perfil del alumno
                     init[p.id_pregunta] = p.valor_auto ?? p.respuesta_previa ?? p.valor ?? p.valor_defecto ?? '';
                 } else if (p.tipo === 'escala' || p.tipo === 'opcion_unica') {
                     init[p.id_pregunta] = null;
@@ -148,7 +174,10 @@ async function cargarEncuesta() {
             estado.value = 'activa';
         }
     } catch (err) {
-        if (err.response?.status === 404) {
+        const status = err.response?.status;
+        if (status === 403) {
+            estado.value = 'sin-empresa';
+        } else if (status === 404 || status === 400) {
             estado.value = 'sin-encuesta';
         } else {
             estado.value = 'error';
@@ -172,6 +201,7 @@ async function enviarRespuestas() {
         // Solo enviar las preguntas visibles (activas). Excluye cualquier ID
         // que el backend haya soft-deleted y que no esté en la vista actual.
         const payload = {
+            id_encuesta: encuesta.value.id_encuesta,
             respuestas: preguntasParaEnviar.value
                 .map((p) => {
                     const val = respuestas.value[p.id_pregunta];
@@ -194,8 +224,15 @@ async function enviarRespuestas() {
         });
         estado.value = 'respondida';
     } catch (err) {
-        const msg = err.response?.data?.message ?? 'No se pudo enviar la encuesta. Intenta de nuevo.';
-        toast.add({ severity: 'error', summary: 'Error', detail: msg, life: 5000 });
+        const raw  = err.response?.data?.message;
+        const msg  = Array.isArray(raw) ? raw[0] : (raw ?? 'No se pudo enviar la encuesta. Intenta de nuevo.');
+        const isSinEmpresa = msg?.toLowerCase().includes('empresa asignada');
+        toast.add({
+            severity: isSinEmpresa ? 'warn' : 'error',
+            summary:  isSinEmpresa ? 'Sin empresa asignada' : 'Error',
+            detail:   msg,
+            life:     isSinEmpresa ? 7000 : 5000
+        });
     } finally {
         enviando.value = false;
     }
@@ -237,6 +274,57 @@ onMounted(cargarEncuesta);
         <p class="enc-hint">Cargando encuesta…</p>
     </div>
 
+    <!-- ───── SELECCIÓN DE ENCUESTA ───── -->
+    <div v-else-if="estado === 'seleccion'" class="enc-seleccion-wrap">
+        <div class="enc-sel-header">
+            <i class="pi pi-clipboard enc-sel-icon"></i>
+            <div>
+                <h2 class="enc-sel-title">Encuestas disponibles</h2>
+                <p class="enc-sel-sub">Tienes {{ listaEncuestas.length }} encuestas en tu periodo. Selecciona cuál quieres contestar.</p>
+            </div>
+        </div>
+
+        <div class="enc-cards-grid">
+            <button
+                v-for="enc in listaEncuestas"
+                :key="enc.id_encuesta"
+                class="enc-card"
+                :class="{ 'enc-card-done': enc.ya_respondida }"
+                @click="!enc.ya_respondida && seleccionarEncuesta(enc.id_encuesta)"
+                :disabled="enc.ya_respondida"
+            >
+                <!-- Badge estado -->
+                <div class="enc-card-status" :class="enc.ya_respondida ? 'enc-status-done' : 'enc-status-pending'">
+                    <i :class="enc.ya_respondida ? 'pi pi-check-circle' : 'pi pi-clock'"></i>
+                    {{ enc.ya_respondida ? 'Completada' : 'Pendiente' }}
+                </div>
+
+                <!-- Badge calificación -->
+                <div v-if="enc.tiene_calificacion" class="enc-card-grade-badge">
+                    <i class="pi pi-star-fill"></i>
+                    Cuenta para tu calificación
+                </div>
+
+                <h3 class="enc-card-nombre">{{ enc.nombre }}</h3>
+                <p v-if="enc.descripcion" class="enc-card-desc">{{ enc.descripcion }}</p>
+                <p v-else class="enc-card-desc enc-card-desc-empty">Sin descripción adicional.</p>
+
+                <div class="enc-card-footer">
+                    <span class="enc-card-periodo">
+                        <i class="pi pi-calendar"></i>
+                        {{ enc.periodo?.nombre }}
+                    </span>
+                    <span v-if="!enc.ya_respondida" class="enc-card-cta">
+                        Contestar <i class="pi pi-arrow-right"></i>
+                    </span>
+                    <span v-else class="enc-card-cta-done">
+                        Ya respondida <i class="pi pi-check"></i>
+                    </span>
+                </div>
+            </button>
+        </div>
+    </div>
+
     <!-- ───── ERROR ───── -->
     <div v-else-if="estado === 'error'" class="enc-center">
         <div class="enc-empty-icon enc-icon-red"><i class="pi pi-exclamation-triangle"></i></div>
@@ -245,11 +333,18 @@ onMounted(cargarEncuesta);
         <Button label="Reintentar" icon="pi pi-refresh" @click="cargarEncuesta" outlined />
     </div>
 
+    <!-- ───── SIN EMPRESA ASIGNADA ───── -->
+    <div v-else-if="estado === 'sin-empresa'" class="enc-center">
+        <div class="enc-empty-icon enc-icon-orange"><i class="pi pi-building"></i></div>
+        <h3 class="enc-empty-title">Encuestas no disponibles aún</h3>
+        <p class="enc-hint">Las encuestas estarán disponibles una vez que tengas una empresa asignada en el periodo actual.<br>Consulta con tu coordinador si crees que ya deberías tener acceso.</p>
+    </div>
+
     <!-- ───── SIN ENCUESTA ACTIVA ───── -->
     <div v-else-if="estado === 'sin-encuesta'" class="enc-center">
         <div class="enc-empty-icon enc-icon-blue"><i class="pi pi-clipboard"></i></div>
-        <h3 class="enc-empty-title">No hay encuesta disponible</h3>
-        <p class="enc-hint">En este momento no hay ninguna encuesta activa.<br>Vuelve más tarde.</p>
+        <h3 class="enc-empty-title">Sin encuestas por el momento</h3>
+        <p class="enc-hint">Aún no hay encuestas disponibles para tu semestre.<br>Vuelve más tarde o consulta con tu coordinador.</p>
     </div>
 
     <!-- ───── YA RESPONDIDA ───── -->
@@ -289,6 +384,11 @@ onMounted(cargarEncuesta);
 
         <!-- Cabecera de la encuesta -->
         <div class="enc-header-card">
+            <div v-if="listaEncuestas.length > 1" class="enc-back-row">
+                <button class="enc-back-btn" @click="estado = 'seleccion'">
+                    <i class="pi pi-arrow-left"></i> Volver a encuestas
+                </button>
+            </div>
             <span class="enc-header-badge">
                 <i class="pi pi-clipboard"></i>
                 Encuesta activa · {{ encuesta.periodo?.nombre }}
@@ -311,7 +411,8 @@ onMounted(cargarEncuesta);
                     <span class="enc-q-num">{{ idx + 1 }}</span>
                     <p class="enc-q-text">
                         {{ pregunta.texto }}
-                        <span class="enc-q-required" title="Requerida">*</span>
+                        <span v-if="pregunta.requerida !== false" class="enc-q-required" title="Obligatoria">*</span>
+                        <span v-else class="enc-q-optional">(opcional)</span>
                     </p>
                     <span v-if="isAnswered(pregunta)" class="enc-q-check">
                         <i class="pi pi-check-circle"></i>
@@ -438,7 +539,9 @@ onMounted(cargarEncuesta);
                 </template>
                 <template v-else>
                     <i class="pi pi-info-circle enc-footer-icon-info"></i>
-                    <span>Faltan {{ totalPreguntas - respondidas }} pregunta{{ totalPreguntas - respondidas !== 1 ? 's' : '' }} por responder.</span>
+                    <span>
+                        Faltan {{ preguntasObligatorias.length - obligatoriasRespondidas }} pregunta{{ (preguntasObligatorias.length - obligatoriasRespondidas) !== 1 ? 's' : '' }} obligatoria{{ (preguntasObligatorias.length - obligatoriasRespondidas) !== 1 ? 's' : '' }} por responder.
+                    </span>
                 </template>
             </div>
             <Button
@@ -482,9 +585,10 @@ onMounted(cargarEncuesta);
     display: flex; align-items: center; justify-content: center;
     font-size: 2rem; margin-bottom: 0.5rem;
 }
-.enc-icon-blue  { background: var(--sisa-tint-blue);  color: var(--sisa-icon-blue);  }
-.enc-icon-green { background: var(--sisa-tint-green); color: var(--sisa-icon-green); }
-.enc-icon-red   { background: var(--sisa-tint-red);   color: var(--sisa-icon-red);   }
+.enc-icon-blue   { background: var(--sisa-tint-blue);   color: var(--sisa-icon-blue);   }
+.enc-icon-green  { background: var(--sisa-tint-green);  color: var(--sisa-icon-green);  }
+.enc-icon-red    { background: var(--sisa-tint-red);    color: var(--sisa-icon-red);    }
+.enc-icon-orange { background: #fff3e0; color: #e65100; }
 .enc-empty-title { font-size: 1.25rem; font-weight: 700; color: var(--text-color); margin: 0; }
 .enc-hint { color: var(--text-color-secondary); font-size: 0.9rem; margin: 0; line-height: 1.6; }
 
@@ -605,6 +709,12 @@ onMounted(cargarEncuesta);
     color: #ef4444;
     font-weight: 700;
     margin-left: 0.2rem;
+}
+.enc-q-optional {
+    font-size: 0.78rem;
+    font-weight: 400;
+    color: var(--text-color-secondary);
+    margin-left: 0.3rem;
 }
 .enc-q-check {
     flex-shrink: 0;
@@ -805,8 +915,163 @@ onMounted(cargarEncuesta);
     border-color: var(--sisa-primary-l) !important;
 }
 
+/* ── Selección de encuesta ───────────────────────────────── */
+.enc-seleccion-wrap {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 2rem 1rem 4rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+.enc-sel-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+.enc-sel-icon {
+    font-size: 2rem;
+    color: var(--sisa-primary-l);
+    flex-shrink: 0;
+}
+.enc-sel-title {
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: var(--text-color);
+    margin: 0 0 0.2rem;
+}
+.enc-sel-sub {
+    font-size: 0.875rem;
+    color: var(--text-color-secondary);
+    margin: 0;
+}
+.enc-cards-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1rem;
+}
+.enc-card {
+    background: var(--surface-card);
+    border: 2px solid var(--sisa-border);
+    border-radius: 14px;
+    padding: 1.25rem 1.35rem 1rem;
+    text-align: left;
+    cursor: pointer;
+    transition: border-color 0.18s, box-shadow 0.18s, transform 0.15s;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+}
+.enc-card:not(:disabled):hover {
+    border-color: var(--sisa-primary-l);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+    transform: translateY(-2px);
+}
+.enc-card-done {
+    opacity: 0.7;
+    cursor: default;
+    border-color: var(--sisa-icon-green) !important;
+    background: var(--sisa-accent-surface);
+}
+.enc-card-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 0.2rem 0.6rem;
+    border-radius: 99px;
+    align-self: flex-start;
+}
+.enc-status-pending {
+    background: #fef3c7;
+    color: #d97706;
+}
+.enc-status-done {
+    background: var(--sisa-tint-green);
+    color: var(--sisa-icon-green);
+}
+.enc-card-grade-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #b45309;
+    background: #fef3c7;
+    border: 1px solid #fde68a;
+    padding: 0.22rem 0.65rem;
+    border-radius: 99px;
+    align-self: flex-start;
+}
+.enc-card-grade-badge .pi { font-size: 0.65rem; color: #f59e0b; }
+.enc-card-nombre {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text-color);
+    margin: 0.2rem 0 0;
+    line-height: 1.4;
+}
+.enc-card-desc {
+    font-size: 0.845rem;
+    color: var(--text-color-secondary);
+    margin: 0;
+    line-height: 1.55;
+    flex: 1;
+}
+.enc-card-desc-empty { font-style: italic; opacity: 0.6; }
+.enc-card-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--sisa-border);
+    margin-top: 0.25rem;
+}
+.enc-card-periodo {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.75rem;
+    color: var(--text-color-secondary);
+}
+.enc-card-cta {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--sisa-primary-l);
+}
+.enc-card-cta-done {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--sisa-icon-green);
+}
+.enc-back-row { margin-bottom: 0.5rem; }
+.enc-back-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--sisa-primary-l);
+    padding: 0;
+}
+.enc-back-btn:hover { text-decoration: underline; }
+
 /* ── Responsive ──────────────────────────────────────── */
 @media (max-width: 600px) {
+    .enc-seleccion-wrap { padding: 1.25rem 0.75rem 4rem; }
+    .enc-cards-grid { grid-template-columns: 1fr; }
     .enc-wrap { padding: 0 0.5rem 5rem; }
     .enc-header-card { padding: 1.25rem 1rem; }
     .enc-question-card { padding: 1rem; }

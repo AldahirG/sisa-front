@@ -12,8 +12,14 @@
     transition:
         transform var(--layout-section-transition-duration),
         left var(--layout-section-transition-duration);
-    background-color: var(--surface-overlay);
+    background: var(--sisa-glass-bg);
+    backdrop-filter: var(--sisa-glass-blur);
+    -webkit-backdrop-filter: var(--sisa-glass-blur);
+    border: 1px solid var(--sisa-glass-border);
     border-radius: var(--content-border-radius);
+    box-shadow:
+        0 8px 32px rgba(0, 0, 0, 0.08),
+        0 2px 8px  rgba(0, 0, 0, 0.04);
     padding: 0.5rem 1.5rem;
 }
 
