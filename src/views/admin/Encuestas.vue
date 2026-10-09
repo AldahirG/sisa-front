@@ -188,10 +188,6 @@ const loadRespuestas = async (id, params = {}) => {
                 total_pendientes:   data.total_pendientes   ?? respPendientes.value.length
             };
 
-            // Log diagnóstico — muestra la respuesta real del backend en la consola del navegador
-            console.log('[SISA] respuestas-detalle → keys:', Object.keys(data));
-            console.log('[SISA] respuestas-detalle → data completo:', data);
-            console.log('[SISA] respondieron cargados:', respRespondieron.value.length, '| pendientes:', respPendientes.value.length);
         }
     } catch (e) {
         toast.add({

@@ -103,8 +103,6 @@ const cargarPerfil = async () => {
     loadingPerfil.value = true;
     try {
         const { data } = await api.get('/perfil');
-        // DEBUG — quitar después de confirmar estructura
-        console.log('[Perfil] raw response:', JSON.stringify(data, null, 2));
         const norm = normalizar(data);
         // Rol siempre del store si el back no lo manda
         if (!norm.rol) norm.rol = auth.user?.rol ?? '';
