@@ -134,8 +134,8 @@ const loadEventos = async () => {
         }
 
         if (isAlumno.value) {
-            // Alumno: carga sus propios entregables con estado de entrega
-            const { data: ents } = await api.get('/entregables/me');
+            // Alumno: carga sus propios entregables con estado y fechas garantizadas
+            const { data: ents } = await api.get('/entregables/me/calendario');
             ents.forEach((e) => {
                 eventos.value.push({
                     tipo:          'entregable',
@@ -147,7 +147,7 @@ const loadEventos = async () => {
                     calificacion:  e.calificacion,
                     observaciones: e.observaciones,
                     estado:        e.estado,
-                    inicio: e.fecha_inicio ? normalizeDate(e.fecha_inicio) : normalizeDate(e.fecha_limite),
+                    inicio: normalizeDate(e.fecha_inicio),
                     fin:    normalizeDate(e.fecha_limite)
                 });
             });
