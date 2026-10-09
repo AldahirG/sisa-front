@@ -24,7 +24,6 @@ const toast = useToast();
 const loading = ref(false);
 const vacantes = ref([]);
 const postulaciones = ref([]);
-const historial = ref(null);
 
 const busqueda = ref('');
 const vacanteSeleccionada = ref(null);
@@ -119,10 +118,8 @@ const loadData = async () => {
     loading.value = true;
 
     try {
-        const [postulacionesRes, historialRes] = await Promise.all([api.get('/postulaciones/me'), api.get('/historial/me/detalle')]);
-
-        postulaciones.value = postulacionesRes.data ?? [];
-        historial.value = historialRes.data ?? null;
+        const { data: postulacionesData } = await api.get('/postulaciones/me');
+        postulaciones.value = postulacionesData ?? [];
 
         hayPeriodoActivo.value = true;
 
