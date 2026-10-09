@@ -1,6 +1,7 @@
 <script setup>
 import api from '@/api/axios';
 import { computed, onMounted, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 
 import Button from 'primevue/button';
 import Checkbox from 'primevue/checkbox';
@@ -16,8 +17,15 @@ import Toast from 'primevue/toast';
 import { useConfirm } from 'primevue/useconfirm';
 import { useToast } from '@/composables/useAppToast';
 
-const toast = useToast();
+const toast   = useToast();
 const confirm = useConfirm();
+const route   = useRoute();
+const router  = useRouter();
+
+// periodoId desde la ruta — null cuando se accede sin param (modo hub)
+const periodoId = computed(() =>
+    route.params?.periodoId ? +route.params.periodoId : null
+);
 
 // ════════════════════════════════
 // CONSTANTS
@@ -396,6 +404,14 @@ const selectEncuesta = async (enc) => {
 
 onMounted(async () => {
     await Promise.all([loadPeriodos(), loadEncuestas()]);
+    if (periodoId.value) {
+        filtroPeriodoList.value = periodoId.value;
+        // selecciona la primera encuesta del periodo si no hay ninguna seleccionada
+        if (!selected.value) {
+            const enc = encuestas.value.find(e => e.periodo?.id_periodo === periodoId.value);
+            if (enc) await selectEncuesta(enc);
+        }
+    }
 });
 
 // ════════════════════════════════
@@ -741,6 +757,31 @@ const selectPeriodo = async (periodoId) => {
 };
 
 // ════════════════════════════════
+// EXPORT XLSX
+// ════════════════════════════════
+const exportandoXlsx = ref(false);
+const exportarXlsx = async (enc) => {
+    exportandoXlsx.value = true;
+    try {
+        const resp = await api.get(`/encuestas/${enc.id_encuesta}/exportar-xlsx`, {
+            responseType: 'blob'
+        });
+        const url = URL.createObjectURL(resp.data);
+        const a   = document.createElement('a');
+        a.href     = url;
+        a.download = `respuestas-${(enc.nombre ?? 'encuesta').replace(/\s+/g, '-')}.xlsx`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    } catch (e) {
+        toast.add({ severity: 'error', summary: 'Error', detail: 'No se pudo exportar el archivo.', life: 4000 });
+    } finally {
+        exportandoXlsx.value = false;
+    }
+};
+
+// ════════════════════════════════
 // OPCIONES DINÁMICAS
 // ════════════════════════════════
 const addOpcion = () => { newOpciones.value.push(''); };
@@ -784,6 +825,17 @@ const defaultEscala = [
         <Toast />
         <ConfirmDialog />
 
+        <!-- ════ BREADCRUMB (sólo en vista detalle /encuestas/:periodoId) ════ -->
+        <div v-if="periodoId" class="enc-breadcrumb">
+            <button class="enc-bc-back" @click="router.push({ name: 'admin-encuestas' })">
+                <i class="pi pi-arrow-left"></i> Encuestas
+            </button>
+            <span class="enc-bc-sep">/</span>
+            <span class="enc-bc-current">
+                {{ periodos.find(p => p.id_periodo === periodoId)?.nombre ?? 'Periodo' }}
+            </span>
+        </div>
+
         <!-- ════════════════════════════════
              HEADER
         ════════════════════════════════ -->
@@ -805,8 +857,8 @@ const defaultEscala = [
         </div>
 
         <template v-else>
-            <!-- ════ PERIOD TABS ════ -->
-            <div v-if="periodosConEncuesta.length > 0" class="period-tabs-bar">
+            <!-- ════ PERIOD TABS (oculto en vista detalle) ════ -->
+            <div v-if="!periodoId && periodosConEncuesta.length > 0" class="period-tabs-bar">
                 <button
                     v-for="p in periodosConEncuesta"
                     :key="p.id_periodo"
@@ -921,6 +973,15 @@ const defaultEscala = [
                             outlined
                             v-tooltip.top="'Eliminar'"
                             @click="selected = enc; showDeleteDialog = true;"
+                        />
+                        <Button
+                            icon="pi pi-file-excel"
+                            severity="success"
+                            size="small"
+                            outlined
+                            v-tooltip.top="'Exportar respuestas XLSX'"
+                            :loading="exportandoXlsx"
+                            @click="exportarXlsx(enc)"
                         />
                     </div>
                 </div>
@@ -1745,6 +1806,31 @@ const defaultEscala = [
    LAYOUT
 ════════════════════════════════════════ */
 .enc-admin-page { display: flex; flex-direction: column; gap: 1.25rem; }
+
+/* ── Breadcrumb ── */
+.enc-breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.82rem;
+    color: var(--p-text-muted-color, #64748b);
+}
+.enc-bc-back {
+    background: none;
+    border: none;
+    padding: 0;
+    font-size: 0.82rem;
+    color: var(--p-primary-600, #2563eb);
+    cursor: pointer;
+    font-family: inherit;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-weight: 500;
+}
+.enc-bc-back:hover { text-decoration: underline; }
+.enc-bc-sep { color: var(--p-text-muted-color, #94a3b8); }
+.enc-bc-current { color: var(--p-text-color, #0f172a); font-weight: 500; }
 
 /* ════════════════════════════════════════
    HEADER

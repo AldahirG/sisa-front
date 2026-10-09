@@ -38,7 +38,8 @@ const AdminPostulaciones = () => import('@/views/admin/Postulaciones.vue');
 const AdminControlAcademico = () => import('@/views/admin/ControlAcademico.vue');
 const AdminControlAcademicoDetalle = () => import('@/views/admin/ControlAcademicoDetalle.vue');
 const AdminControlUsuarios = () => import('@/views/admin/Alumnos.vue');
-const AdminEncuestas       = () => import('@/views/admin/Encuestas.vue');
+const AdminEncuestasPeriodos = () => import('@/views/admin/EncuestasPeriodos.vue');
+const AdminEncuestaDetalle   = () => import('@/views/admin/Encuestas.vue');
 const AdminNivelesPractica = () => import('@/views/admin/NivelesPractica.vue');
 
 // ================================
@@ -187,8 +188,18 @@ const routes = [
             },
             {
                 path: 'encuestas',
-                name: 'admin-encuestas',
-                component: AdminEncuestas
+                children: [
+                    {
+                        path: '',
+                        name: 'admin-encuestas',
+                        component: AdminEncuestasPeriodos
+                    },
+                    {
+                        path: ':periodoId',
+                        name: 'admin-encuestas-detalle',
+                        component: AdminEncuestaDetalle
+                    }
+                ]
             },
             {
                 path: 'niveles-practica',
