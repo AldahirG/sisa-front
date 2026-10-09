@@ -213,7 +213,7 @@ const login = async () => {
 .login-wrapper {
     display: flex;
     min-height: 100vh;
-    background-color: #f8fafc;
+    background-color: var(--p-content-background);
 }
 
 /* ════════════════════════════════════════
@@ -469,7 +469,7 @@ const login = async () => {
     gap: 0.5rem;
     margin-top: 1.5rem;
     padding: 0.875rem 1rem;
-    background: #f8fafc;
+    background: var(--p-content-hover-background);
     border: 1px solid var(--sisa-border);
     border-radius: 8px;
     font-size: 0.8rem;

@@ -513,7 +513,7 @@ const onFiltroChange = () => loadNiveles();
 }
 
 .np-table :deep(.p-datatable-thead > tr > th) {
-    background: var(--p-surface-50);
+    background: var(--p-content-hover-background);
     color: var(--p-text-muted-color);
     font-size: 0.78rem;
     font-weight: 600;

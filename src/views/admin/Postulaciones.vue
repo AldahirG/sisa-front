@@ -1001,7 +1001,7 @@ const confirmarRechazarTodas = async () => {
     border: 1px solid var(--p-content-border-color);
     border-radius: .5rem;
     padding: .35rem .75rem;
-    background: var(--p-surface-50, #f8fafc);
+    background: var(--p-content-hover-background);
     transition: border-color .15s;
 }
 .ps-search-wrap:focus-within {
@@ -1270,7 +1270,7 @@ const confirmarRechazarTodas = async () => {
     flex-direction: column;
     gap: .375rem;
     padding: .75rem 1rem;
-    background: var(--p-surface-50, rgba(0,0,0,.02));
+    background: var(--p-content-hover-background);
     border-radius: .5rem;
     border: 1px solid var(--p-content-border-color);
 }
@@ -1315,7 +1315,7 @@ const confirmarRechazarTodas = async () => {
     margin-top: .625rem;
     padding: .5rem .75rem;
     border-radius: .5rem;
-    background: var(--p-surface-50, rgba(0,0,0,.02));
+    background: var(--p-content-hover-background);
     border: 1px solid var(--p-content-border-color);
     font-size: .82rem;
     color: var(--p-text-muted-color);
@@ -1337,7 +1337,7 @@ const confirmarRechazarTodas = async () => {
 }
 .resultado-stat--green { background: rgba(46,125,50,.08); border: 1px solid rgba(46,125,50,.25); }
 .resultado-stat--red   { background: rgba(198,40,40,.08); border: 1px solid rgba(198,40,40,.25); }
-.resultado-stat--muted { background: var(--p-surface-50); border: 1px solid var(--p-content-border-color); }
+.resultado-stat--muted { background: var(--p-content-hover-background); border: 1px solid var(--p-content-border-color); }
 
 .resultado-num { font-size: 2.2rem; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
 .resultado-stat--green .resultado-num { color: #2e7d32; }

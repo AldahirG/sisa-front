@@ -860,7 +860,7 @@ const ejecutarDescarga = async () => {
 
 .nivel-chip--none {
     color: var(--p-text-muted-color);
-    background: var(--p-surface-100);
+    background: var(--p-content-hover-background);
     font-weight: 400;
 }
 
@@ -947,7 +947,7 @@ const ejecutarDescarga = async () => {
     gap: .875rem;
     padding: .875rem 1rem;
     border-radius: 10px;
-    background: var(--p-surface-50, #fafafa);
+    background: var(--p-content-hover-background);
     border: 1px solid var(--p-content-border-color);
 }
 
@@ -995,7 +995,7 @@ const ejecutarDescarga = async () => {
     font-weight: 600;
     padding: .15rem .5rem;
     border-radius: 20px;
-    background: var(--p-surface-100);
+    background: var(--p-content-hover-background);
     color: var(--p-text-muted-color);
     border: 1px solid var(--p-content-border-color);
 }
@@ -1039,7 +1039,7 @@ const ejecutarDescarga = async () => {
 }
 
 .dl-sheet-row:last-child { border-bottom: none; }
-.dl-sheet-row:hover { background: var(--p-surface-50); }
+.dl-sheet-row:hover { background: var(--p-content-hover-background); }
 
 .dl-sheet-num {
     width: 22px;
@@ -1059,7 +1059,7 @@ const ejecutarDescarga = async () => {
     width: 28px;
     height: 28px;
     border-radius: 7px;
-    background: var(--p-surface-100);
+    background: var(--p-content-hover-background);
     color: var(--sisa-icon-blue, #1565C0);
     display: flex;
     align-items: center;

@@ -492,7 +492,7 @@ onMounted(async () => {
 .table-meta {
     display: flex; align-items: center; justify-content: space-between;
     padding: .875rem 1.25rem;
-    background: var(--p-surface-50, #f8fafc);
+    background: var(--p-content-hover-background);
     border-bottom: 1px solid var(--p-content-border-color, #e2e8f0);
     font-size: .875rem; color: var(--p-text-muted-color, #64748b); font-weight: 500;
 }
@@ -500,7 +500,7 @@ onMounted(async () => {
 
 .hist-table-scroll { overflow-x: auto; }
 .hist-table { width: 100%; border-collapse: collapse; font-size: .875rem; }
-.hist-table thead tr { background: var(--p-surface-100, #f1f5f9); }
+.hist-table thead tr { background: var(--p-content-hover-background); }
 .hist-table th {
     padding: .75rem 1rem; text-align: left; font-weight: 600;
     font-size: .78rem; text-transform: uppercase; letter-spacing: .04em;
@@ -513,7 +513,7 @@ onMounted(async () => {
     vertical-align: middle; color: var(--p-text-color, #1e293b);
 }
 .hist-table tbody tr:last-child td { border-bottom: none; }
-.hist-table tbody tr:hover td { background: var(--p-surface-50, #f8fafc); }
+.hist-table tbody tr:hover td { background: var(--p-content-hover-background); }
 
 .td-alumno { min-width: 160px; }
 .alumno-name { font-weight: 600; }
@@ -596,7 +596,7 @@ onMounted(async () => {
 /* Resumen mini bar */
 .det-resumen {
     display: flex; align-items: center;
-    background: var(--p-surface-50, #f8fafc);
+    background: var(--p-content-hover-background);
     border-bottom: 1px solid var(--p-content-border-color, #e2e8f0);
 }
 .det-res-item {
@@ -625,7 +625,7 @@ onMounted(async () => {
     padding: .55rem .875rem; text-align: left; font-weight: 600;
     font-size: .75rem; text-transform: uppercase; letter-spacing: .04em;
     color: var(--p-text-muted-color, #64748b);
-    background: var(--p-surface-50, #f8fafc);
+    background: var(--p-content-hover-background);
     border-bottom: 1px solid var(--p-content-border-color, #e2e8f0);
     white-space: nowrap;
 }

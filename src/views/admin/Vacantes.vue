@@ -907,7 +907,7 @@ onMounted(async () => {
     align-items: center;
     justify-content: space-between;
     padding: .875rem 1.25rem;
-    background: var(--p-surface-50, #f8fafc);
+    background: var(--p-content-hover-background);
     border-bottom: 1px solid var(--p-content-border-color);
     cursor: pointer;
     user-select: none;
@@ -927,7 +927,7 @@ onMounted(async () => {
     padding: .6rem 1rem; text-align: left; font-weight: 600;
     font-size: .75rem; text-transform: uppercase; letter-spacing: .04em;
     color: var(--p-text-muted-color);
-    background: var(--p-surface-100, #f1f5f9);
+    background: var(--p-content-hover-background);
     border-bottom: 1px solid var(--p-content-border-color);
     white-space: nowrap;
 }
@@ -948,7 +948,7 @@ onMounted(async () => {
 .vac-table tbody tr.row-full td { color: var(--p-text-muted-color); }
 
 .vac-table tbody tr:last-child td { border-bottom: none; }
-.vac-table tbody tr:not(.row-full):hover td { background: var(--p-surface-50, #f8fafc); }
+.vac-table tbody tr:not(.row-full):hover td { background: var(--p-content-hover-background); }
 
 /* Cupo cell */
 .cupo-cell { display: flex; flex-direction: column; gap: .15rem; }
@@ -984,7 +984,7 @@ onMounted(async () => {
 .carrera-more {
     display: inline-block; font-size: .7rem; font-weight: 600;
     padding: .15rem .45rem; border-radius: 999px;
-    background: var(--p-surface-100, #f1f5f9); color: var(--p-text-muted-color);
+    background: var(--p-content-hover-background); color: var(--p-text-muted-color);
 }
 
 .td-actions { display: flex; align-items: center; gap: .15rem; }
@@ -1031,7 +1031,7 @@ onMounted(async () => {
 .dup-info {
     display: flex; flex-direction: column; gap: .2rem;
     padding: .75rem 1rem; margin-bottom: 1rem;
-    background: var(--p-surface-50, #f8fafc);
+    background: var(--p-content-hover-background);
     border: 1px solid var(--p-content-border-color);
     border-radius: .5rem;
 }
@@ -1043,12 +1043,12 @@ onMounted(async () => {
 .import-hint {
     font-size: .875rem; color: var(--p-text-muted-color); line-height: 1.6;
     padding: .75rem 1rem;
-    background: var(--p-surface-50, #f8fafc);
+    background: var(--p-content-hover-background);
     border: 1px solid var(--p-content-border-color);
     border-radius: .5rem;
 }
 .import-hint code {
-    background: var(--p-surface-100, #f1f5f9);
+    background: var(--p-content-hover-background);
     padding: .1rem .35rem; border-radius: .25rem;
     font-family: monospace; font-size: .82rem;
 }
@@ -1066,7 +1066,7 @@ onMounted(async () => {
 .autoasign-result { display: flex; flex-direction: column; gap: 1rem; }
 .autoasign-stats { display: flex; gap: 1rem; }
 .astat { flex: 1; display: flex; flex-direction: column; align-items: center; gap: .25rem;
-    padding: 1rem; background: var(--p-surface-50, #f8fafc);
+    padding: 1rem; background: var(--p-content-hover-background);
     border: 1px solid var(--p-content-border-color); border-radius: .5rem; }
 .astat-num { font-size: 1.75rem; font-weight: 700; }
 .astat-lbl { font-size: .75rem; font-weight: 600; color: var(--p-text-muted-color); text-transform: uppercase; }
@@ -1080,7 +1080,7 @@ onMounted(async () => {
     padding: .5rem .75rem; text-align: left; font-weight: 600;
     font-size: .75rem; text-transform: uppercase; letter-spacing: .04em;
     color: var(--p-text-muted-color);
-    background: var(--p-surface-50, #f8fafc);
+    background: var(--p-content-hover-background);
     border-bottom: 1px solid var(--p-content-border-color);
     position: sticky; top: 0;
 }
@@ -1119,7 +1119,7 @@ onMounted(async () => {
 .toggle-row {
     display: flex; align-items: center; justify-content: space-between;
     gap: 1rem; padding: .75rem 1rem;
-    background: var(--p-surface-50, #f8fafc);
+    background: var(--p-content-hover-background);
     border: 1px solid var(--p-content-border-color);
     border-radius: .5rem;
 }

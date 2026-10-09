@@ -1122,7 +1122,7 @@ const estadoSeverity = (estado) => {
     gap: 0.4rem;
     font-size: 0.8rem;
     color: var(--p-text-muted-color);
-    background: var(--p-surface-50);
+    background: var(--p-content-hover-background);
     border: 1px solid var(--p-content-border-color);
     padding: 0.5rem 0.75rem;
     border-radius: 8px;

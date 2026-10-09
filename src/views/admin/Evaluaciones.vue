@@ -918,7 +918,7 @@ onMounted(loadPeriodos);
 }
 
 .ev-stat {
-    background: var(--p-surface-50, #f8fafc);
+    background: var(--p-content-hover-background);
     border: 1px solid var(--p-content-border-color);
     border-radius: .5rem;
     padding: .5rem .625rem;
@@ -1131,7 +1131,7 @@ onMounted(loadPeriodos);
     font-family: inherit;
     transition: background .12s;
 }
-.ev-student-row:hover    { background: var(--p-surface-50, #f8fafc); }
+.ev-student-row:hover    { background: var(--p-content-hover-background); }
 .ev-student-row--active  {
     background: var(--sisa-accent-surface, #f0f7ff) !important;
     border-left: 3px solid var(--sisa-primary-l);
@@ -1352,7 +1352,7 @@ onMounted(loadPeriodos);
 
 /* Comments */
 .ev-comments {
-    background: var(--p-surface-50, #f8fafc);
+    background: var(--p-content-hover-background);
     border: 1px solid var(--p-content-border-color);
     border-radius: .75rem;
     padding: 1rem;

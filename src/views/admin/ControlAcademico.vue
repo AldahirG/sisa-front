@@ -881,7 +881,7 @@ const progressPct = (row) => {
 }
 
 .ca-table :deep(.p-datatable-thead > tr > th) {
-    background: var(--p-surface-50);
+    background: var(--p-content-hover-background);
     color: var(--p-text-muted-color);
     font-size: 0.78rem;
     font-weight: 600;
@@ -937,7 +937,7 @@ const progressPct = (row) => {
     display: inline-block;
     padding: 0.25rem 0.65rem;
     border-radius: 20px;
-    background: var(--p-surface-100);
+    background: var(--p-content-hover-background);
     color: var(--p-text-color);
     font-size: 0.8rem;
     font-weight: 500;
@@ -970,7 +970,7 @@ const progressPct = (row) => {
 .progress-track {
     height: 5px;
     border-radius: 3px;
-    background: var(--p-surface-100);
+    background: var(--p-content-hover-background);
     overflow: hidden;
     width: 80px;
 }
@@ -1032,7 +1032,7 @@ const progressPct = (row) => {
     gap: 0.2rem;
     padding: 0.65rem 1.25rem;
     border-radius: 10px;
-    background: var(--p-surface-50);
+    background: var(--p-content-hover-background);
     border: 1px solid var(--p-content-border-color);
     width: 100%;
     box-sizing: border-box;
@@ -1094,7 +1094,7 @@ const progressPct = (row) => {
 
 .rule-green    { background: rgba(22, 163, 74, 0.08);  color: var(--sisa-icon-green, #16a34a); }
 .rule-amber    { background: rgba(217, 119, 6, 0.08);  color: var(--sisa-icon-amber, #d97706); }
-.rule-secondary{ background: var(--p-surface-100);     color: var(--p-text-muted-color); }
+.rule-secondary{ background: var(--p-content-hover-background);     color: var(--p-text-muted-color); }
 .rule-blue     { background: rgba(21, 101, 192, 0.08); color: var(--sisa-icon-blue, var(--sisa-primary-l, #1565C0)); }
 
 /* ================================
@@ -1149,7 +1149,7 @@ const progressPct = (row) => {
 
 .chip-green    { background: rgba(22, 163, 74, 0.1);   color: var(--sisa-icon-green, #16a34a); }
 .chip-amber    { background: rgba(217, 119, 6, 0.1);   color: var(--sisa-icon-amber, #d97706); }
-.chip-secondary{ background: var(--p-surface-100);     color: var(--p-text-muted-color); }
+.chip-secondary{ background: var(--p-content-hover-background);     color: var(--p-text-muted-color); }
 .chip-blue     { background: rgba(21, 101, 192, 0.1);  color: var(--sisa-icon-blue, var(--sisa-primary-l, #1565C0)); }
 
 /* Grupos de resultado */
@@ -1185,7 +1185,7 @@ const progressPct = (row) => {
 
 .grupo-green    { background: rgba(22, 163, 74, 0.1);   color: var(--sisa-icon-green, #16a34a); }
 .grupo-amber    { background: rgba(217, 119, 6, 0.1);   color: var(--sisa-icon-amber, #d97706); }
-.grupo-secondary{ background: var(--p-surface-100);     color: var(--p-text-muted-color); }
+.grupo-secondary{ background: var(--p-content-hover-background);     color: var(--p-text-muted-color); }
 .grupo-blue     { background: rgba(21, 101, 192, 0.1);  color: var(--sisa-icon-blue, var(--sisa-primary-l, #1565C0)); }
 
 .grupo-list {
@@ -1229,7 +1229,7 @@ const progressPct = (row) => {
 
 .gi-badge-green    { background: rgba(22, 163, 74, 0.12);   color: var(--sisa-icon-green, #16a34a); }
 .gi-badge-amber    { background: rgba(217, 119, 6, 0.12);   color: var(--sisa-icon-amber, #d97706); }
-.gi-badge-secondary{ background: var(--p-surface-100);      color: var(--p-text-muted-color); }
+.gi-badge-secondary{ background: var(--p-content-hover-background);      color: var(--p-text-muted-color); }
 .gi-badge-blue     { background: rgba(21, 101, 192, 0.12);  color: var(--sisa-icon-blue, var(--sisa-primary-l, #1565C0)); }
 
 /* ================================

@@ -364,7 +364,7 @@ onMounted(loadHistorial)
     align-items: center;
     justify-content: space-between;
     padding: .875rem 1.25rem;
-    background: var(--p-surface-50, #f8fafc);
+    background: var(--p-content-hover-background);
     border-bottom: 1px solid var(--p-content-border-color, #e2e8f0);
     gap: .75rem;
     flex-wrap: wrap;
@@ -444,7 +444,7 @@ onMounted(loadHistorial)
     display: flex;
     align-items: center;
     gap: 0;
-    background: var(--p-surface-100, #f1f5f9);
+    background: var(--p-content-hover-background);
     border-radius: .5rem;
     overflow: hidden;
     border: 1px solid var(--p-content-border-color, #e2e8f0);
@@ -491,7 +491,7 @@ onMounted(loadHistorial)
     text-transform: uppercase;
     letter-spacing: .05em;
     color: var(--p-text-muted-color, #64748b);
-    background: var(--p-surface-100, #f1f5f9);
+    background: var(--p-content-hover-background);
     border-bottom: 1px solid var(--p-content-border-color, #e2e8f0);
     display: flex;
     align-items: center;
@@ -511,7 +511,7 @@ onMounted(loadHistorial)
     text-transform: uppercase;
     letter-spacing: .04em;
     color: var(--p-text-muted-color, #64748b);
-    background: var(--p-surface-50, #f8fafc);
+    background: var(--p-content-hover-background);
     border-bottom: 1px solid var(--p-content-border-color, #e2e8f0);
     white-space: nowrap;
 }
@@ -580,7 +580,7 @@ onMounted(loadHistorial)
     transition: background .15s, color .15s;
 }
 .expand-btn:hover {
-    background: var(--p-surface-100, #f1f5f9);
+    background: var(--p-content-hover-background);
     color: var(--p-text-color, #1e293b);
 }
 

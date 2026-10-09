@@ -481,7 +481,7 @@ const logout = () => {
     flex-direction: column;
     gap: 0.25rem;
     padding: 0.75rem 1rem;
-    background: var(--p-surface-50, rgba(0,0,0,.02));
+    background: var(--p-content-hover-background);
     border: 1px solid var(--p-content-border-color);
     border-radius: 10px;
 }

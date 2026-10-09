@@ -949,7 +949,7 @@ const bajaPracticas = () => {
     transition: background 0.15s, border-color 0.15s;
 }
 .enc-card:hover {
-    background: var(--p-surface-50, rgba(0,0,0,0.025));
+    background: var(--p-content-hover-background);
     border-color: var(--p-primary-color);
 }
 .enc-card--done .enc-card-icon { color: #16a34a; }
@@ -990,7 +990,7 @@ const bajaPracticas = () => {
     align-items: center;
     justify-content: space-between;
     padding: 0.6rem 0.9rem;
-    background: var(--p-surface-50, rgba(0,0,0,0.02));
+    background: var(--p-content-hover-background);
     border-bottom: 1px solid var(--p-content-border-color);
     gap: 0.5rem;
 }
@@ -1226,7 +1226,7 @@ const bajaPracticas = () => {
 .section-count {
     font-size: 0.73rem;
     color: var(--p-text-muted-color);
-    background: var(--p-surface-100, rgba(0,0,0,0.05));
+    background: var(--p-content-hover-background);
     border: 1px solid var(--p-content-border-color);
     border-radius: 20px;
     padding: 0.15rem 0.65rem;
@@ -1241,7 +1241,7 @@ const bajaPracticas = () => {
     grid-template-columns: 52px 1fr 150px 130px;
     gap: 0.75rem;
     padding: 0.5rem 1rem;
-    background: var(--p-surface-50, rgba(0,0,0,0.02));
+    background: var(--p-content-hover-background);
     border-bottom: 1px solid var(--p-content-border-color);
     font-size: 0.7rem;
     font-weight: 700;
@@ -1266,7 +1266,7 @@ const bajaPracticas = () => {
 }
 
 .ent-row:hover {
-    background: var(--p-surface-50, rgba(0,0,0,0.02));
+    background: var(--p-content-hover-background);
 }
 
 .ent-graded {
@@ -1287,7 +1287,7 @@ const bajaPracticas = () => {
     width: 26px;
     height: 26px;
     border-radius: 50%;
-    background: var(--p-surface-100, rgba(0,0,0,0.06));
+    background: var(--p-content-hover-background);
     border: 1px solid var(--p-content-border-color);
     color: var(--p-text-muted-color);
     display: flex;

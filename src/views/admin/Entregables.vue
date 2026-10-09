@@ -1041,7 +1041,7 @@ onMounted(loadPeriodos);
     min-width: 2.5rem;
 }
 .peso-badge--none {
-    background: var(--surface-100, #f4f4f5);
+    background: var(--p-content-hover-background);
     color: var(--text-color-secondary, #9ca3af);
 }
 
@@ -1125,7 +1125,7 @@ onMounted(loadPeriodos);
     gap: 1rem;
     flex-wrap: wrap;
     padding: .875rem 1.25rem;
-    background: var(--p-surface-50, #f8fafc);
+    background: var(--p-content-hover-background);
     border-bottom: 1px solid var(--p-content-border-color);
 }
 
@@ -1229,7 +1229,7 @@ onMounted(loadPeriodos);
     border-bottom: 1px solid var(--p-content-border-color);
 }
 .grupo-row:last-child { border-bottom: none; }
-.grupo-row:hover { background: var(--p-surface-50, #f8fafc); }
+.grupo-row:hover { background: var(--p-content-hover-background); }
 
 .grupo-row__orden {
     width: 1.75rem;
@@ -1351,7 +1351,7 @@ onMounted(loadPeriodos);
     font-size: .82rem;
     color: var(--p-text-muted-color);
     padding: .6rem .75rem;
-    background: var(--p-surface-50, #f8fafc);
+    background: var(--p-content-hover-background);
     border: 1px solid var(--p-content-border-color);
     border-radius: .5rem;
 }
