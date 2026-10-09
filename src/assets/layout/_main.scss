@@ -11,3 +11,37 @@
     flex: 1 1 auto;
     padding-bottom: 2rem;
 }
+
+/* ── Page route transitions ──────────────────────────────── */
+.sisa-page-enter-active {
+    transition:
+        opacity    var(--sisa-dur-base) var(--sisa-ease-out),
+        transform  var(--sisa-dur-base) var(--sisa-ease-out);
+}
+
+.sisa-page-leave-active {
+    transition:
+        opacity   100ms ease-in,
+        transform 100ms ease-in;
+}
+
+.sisa-page-enter-from {
+    opacity: 0;
+    transform: translateY(6px);
+}
+
+.sisa-page-leave-to {
+    opacity: 0;
+    transform: translateY(-4px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .sisa-page-enter-active,
+    .sisa-page-leave-active {
+        transition: none !important;
+    }
+    .sisa-page-enter-from,
+    .sisa-page-leave-to {
+        transform: none !important;
+    }
+}

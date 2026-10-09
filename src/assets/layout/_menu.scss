@@ -75,7 +75,9 @@
             padding: 0.75rem 1rem;
             border-radius: var(--content-border-radius);
             transition:
-                box-shadow var(--element-transition-duration);
+                background-color var(--sisa-dur-fast) ease,
+                color            var(--sisa-dur-fast) ease,
+                box-shadow       var(--element-transition-duration);
 
             .layout-menuitem-icon {
                 margin-right: 0.5rem;
@@ -156,10 +158,21 @@
 
 .layout-submenu-leave-active {
     overflow: hidden;
-    transition: max-height 0.45s cubic-bezier(0, 1, 0, 1);
+    transition: max-height 0.3s cubic-bezier(0.4, 0, 1, 1);
 }
 
 .layout-submenu-enter-active {
     overflow: hidden;
-    transition: max-height 1s ease-in-out;
+    transition: max-height 0.35s var(--sisa-ease-out);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .layout-sidebar,
+    .layout-menu ul a,
+    .layout-menu .layout-submenu-toggler,
+    .layout-submenu-enter-active,
+    .layout-submenu-leave-active {
+        transition: none !important;
+        animation: none !important;
+    }
 }

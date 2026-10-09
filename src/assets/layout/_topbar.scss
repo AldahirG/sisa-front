@@ -59,7 +59,7 @@
         transition:
             background-color var(--sisa-dur-fast) ease,
             color            var(--sisa-dur-fast) ease,
-            transform        var(--sisa-dur-fast) var(--sisa-ease-spring),
+            transform        var(--sisa-dur-fast) var(--sisa-ease-out),
             box-shadow       var(--sisa-dur-fast) ease;
 
         &:hover {
@@ -121,11 +121,24 @@
     }
 }
 
+@keyframes topbar-menu-in {
+    from {
+        opacity: 0;
+        transform: scale(0.92);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
 @media (prefers-reduced-motion: reduce) {
     .layout-topbar-action,
-    .layout-topbar-logo {
+    .layout-topbar-logo,
+    .layout-topbar-menu {
         transition: none !important;
         transform: none !important;
+        animation: none !important;
     }
 }
 
@@ -149,7 +162,7 @@
         .layout-topbar-menu {
             position: absolute;
             background-color: var(--surface-overlay);
-            transform-origin: top;
+            transform-origin: top right;
             box-shadow:
                 0px 3px 5px rgba(0, 0, 0, 0.02),
                 0px 0px 2px rgba(0, 0, 0, 0.05),
@@ -160,6 +173,7 @@
             top: 4rem;
             min-width: 15rem;
             border: 1px solid var(--surface-border);
+            animation: topbar-menu-in var(--sisa-dur-base) var(--sisa-ease-spring) both;
 
             .layout-topbar-menu-content {
                 gap: 0.5rem;
